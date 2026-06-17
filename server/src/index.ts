@@ -4,6 +4,7 @@ import { initDatabase } from './database';
 import categoryRoutes from './routes/categories';
 import tagRoutes from './routes/tags';
 import transactionRoutes from './routes/transactions';
+import budgetRoutes from './routes/budgets';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -20,6 +21,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/categories', categoryRoutes);
 app.use('/api/tags', tagRoutes);
 app.use('/api/transactions', transactionRoutes);
+app.use('/api/budgets', budgetRoutes);
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
