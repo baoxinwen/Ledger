@@ -1,0 +1,61 @@
+import axios from 'axios';
+import type { TransactionFilter, TransactionWithDetails, Category, Tag, StatsData, Budget, BudgetStatus } from '../types';
+
+const api = axios.create({
+  baseURL: '/api',
+});
+
+export const transactionApi = {
+  getAll: (filter: TransactionFilter = {}) =>
+    api.get<{ data: TransactionWithDetails[]; total: number }>('/transactions', { params: filter }),
+  getById: (id: number) =>
+    api.get<TransactionWithDetails>(`/transactions/${id}`),
+  create: (data: { type: 'income' | 'expense'; amount: number; category_id: number; note?: string; date: string; tag_ids?: number[] }) =>
+    api.post<TransactionWithDetails>('/transactions', data),
+  update: (id: number, data: Partial<TransactionWithDetails>) =>
+    api.put<TransactionWithDetails>(`/transactions/${id}`, data),
+  delete: (id: number) =>
+    api.delete(`/transactions/${id}`),
+  getStats: (params: { start_date?: string; end_date?: string; type?: 'income' | 'expense' }) =>
+    api.get<StatsData>('/transactions/stats', { params }),
+};
+
+export const categoryApi = {
+  getAll: (type?: 'income' | 'expense') =>
+    api.get<Category[]>('/categories', { params: { type } }),
+  create: (data: { name: string; type: 'income' | 'expense'; icon?: string; color?: string }) =>
+    api.post<Category>('/categories', data),
+  update: (id: number, data: { name?: string; icon?: string; color?: string }) =>
+    api.put<Category>(`/categories/${id}`, data),
+  delete: (id: number) =>
+    api.delete(`/categories/${id}`),
+};
+
+export const tagApi = {
+  getAll: () =>
+    api.get<Tag[]>('/tags'),
+  create: (name: string) =>
+    api.post<Tag>('/tags', { name }),
+  delete: (id: number) =>
+    api.delete(`/tags/${id}`),
+};
+
+export const budgetApi = {
+  getAll: () =>
+    api.get<Budget[]>('/budgets'),
+  getStatus: (month: string) =>
+    api.get<BudgetStatus[]>('/budgets/status', { params: { month } }),
+  create: (data: { category_id?: number; amount: number; period: 'monthly' | 'yearly'; start_date: string }) =>
+    api.post<Budget>('/budgets', data),
+  update: (id: number, data: Partial<Budget>) =>
+    api.put<Budget>(`/budgets/${id}`, data),
+  delete: (id: number) =>
+    api.delete(`/budgets/${id}`),
+};
+
+export const importExportApi = {
+  export: (format: 'json' | 'csv') =>
+    api.get('/export', { params: { format }, responseType: 'blob' }),
+  import: (transactions: unknown[]) =>
+    api.post('/import', { transactions }),
+};
