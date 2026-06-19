@@ -5,6 +5,13 @@ export interface Transaction {
   category_id: number;
   note: string | null;
   date: string;
+  source: string | null;
+  source_transaction_id: string | null;
+  source_merchant_order_id: string | null;
+  source_category: string | null;
+  source_time: string | null;
+  payment_method: string | null;
+  source_status: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -22,11 +29,6 @@ export interface Category {
 export interface Tag {
   id: number;
   name: string;
-}
-
-export interface TransactionTag {
-  transaction_id: number;
-  tag_id: number;
 }
 
 export interface Budget {
@@ -57,8 +59,30 @@ export interface TransactionFilter {
   order?: 'asc' | 'desc';
 }
 
-export interface StatsQuery {
-  start_date?: string;
-  end_date?: string;
-  type?: 'income' | 'expense';
+export interface ImportMetadata {
+  source?: 'standard' | 'alipay' | 'wechat';
+  source_transaction_id?: string;
+  source_merchant_order_id?: string;
+  source_category?: string;
+  source_time?: string;
+  payment_method?: string;
+  source_status?: string;
+}
+
+export interface ImportableTransaction extends ImportMetadata {
+  type: 'income' | 'expense';
+  amount: number;
+  category: string;
+  note?: string | null;
+  date: string;
+  tags?: string[];
+}
+
+export interface ImportResult {
+  success: number;
+  failed: number;
+  skipped: number;
+  duplicates: number;
+  createdCategories: number;
+  errors: string[];
 }

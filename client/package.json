@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
@@ -23,6 +25,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.27.0",
+    "@playwright/test": "^1.61.0",
     "@types/react": "^19.1.6",
     "@types/react-dom": "^19.1.6",
     "@types/react-router-dom": "^5.3.3",

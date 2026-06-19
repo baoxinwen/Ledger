@@ -32,6 +32,13 @@ export function initDatabase(): void {
       category_id INTEGER NOT NULL,
       note TEXT,
       date TEXT NOT NULL,
+      source TEXT,
+      source_transaction_id TEXT,
+      source_merchant_order_id TEXT,
+      source_category TEXT,
+      source_time TEXT,
+      payment_method TEXT,
+      source_status TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (category_id) REFERENCES categories(id)
@@ -64,7 +71,35 @@ export function initDatabase(): void {
     CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id);
   `);
 
+  migrateTransactionImportColumns();
   seedCategories();
+}
+
+function migrateTransactionImportColumns(): void {
+  const columns = db.prepare('PRAGMA table_info(transactions)').all() as { name: string }[];
+  const existingColumns = new Set(columns.map((column) => column.name));
+  const importColumns = [
+    'source TEXT',
+    'source_transaction_id TEXT',
+    'source_merchant_order_id TEXT',
+    'source_category TEXT',
+    'source_time TEXT',
+    'payment_method TEXT',
+    'source_status TEXT',
+  ];
+
+  importColumns.forEach((definition) => {
+    const columnName = definition.split(' ')[0];
+    if (!existingColumns.has(columnName)) {
+      db.prepare(`ALTER TABLE transactions ADD COLUMN ${definition}`).run();
+    }
+  });
+
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_source_unique
+      ON transactions(source, source_transaction_id)
+      WHERE source IS NOT NULL AND source_transaction_id IS NOT NULL;
+  `);
 }
 
 function seedCategories(): void {

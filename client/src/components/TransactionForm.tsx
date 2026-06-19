@@ -14,11 +14,12 @@ import {
   Autocomplete,
 } from '@mui/material';
 import type { TransactionWithDetails, Category, Tag } from '../types';
+import { useFormMemoryStore } from '../stores/formMemoryStore';
 
 interface TransactionFormProps {
   open: boolean;
   onClose: () => void;
-  onSubmit: (data: any) => void;
+  onSubmit: (data: any) => Promise<void>;
   transaction?: TransactionWithDetails | null;
   categories: Category[];
   tags: Tag[];
@@ -34,11 +35,12 @@ export default function TransactionForm({
   tags,
   onCreateTag,
 }: TransactionFormProps) {
-  const [type, setType] = useState<'income' | 'expense'>('expense');
+  const { transactionForm, setTransactionForm } = useFormMemoryStore();
+  const [type, setType] = useState<'income' | 'expense'>(transactionForm.type);
   const [amount, setAmount] = useState('');
-  const [categoryId, setCategoryId] = useState<number | ''>('');
+  const [categoryId, setCategoryId] = useState<number | ''>(transactionForm.category_id || '');
   const [note, setNote] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(transactionForm.date);
   const [selectedTags, setSelectedTags] = useState<Tag[]>([]);
 
   useEffect(() => {
@@ -50,27 +52,34 @@ export default function TransactionForm({
       setDate(transaction.date);
       setSelectedTags(transaction.tags);
     } else {
-      setType('expense');
+      setType(transactionForm.type);
       setAmount('');
-      setCategoryId('');
+      setCategoryId(transactionForm.category_id || '');
       setNote('');
-      setDate(new Date().toISOString().split('T')[0]);
+      setDate(transactionForm.date);
       setSelectedTags([]);
     }
   }, [transaction]);
 
   const filteredCategories = categories.filter((c) => c.type === type);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!amount || !categoryId || !date) return;
 
-    onSubmit({
+    await onSubmit({
       type,
       amount: parseFloat(amount),
       category_id: categoryId,
       note: note || undefined,
       date,
       tag_ids: selectedTags.map((t) => t.id),
+    });
+
+    // Save form memory for next use
+    setTransactionForm({
+      type,
+      category_id: categoryId,
+      date,
     });
 
     onClose();

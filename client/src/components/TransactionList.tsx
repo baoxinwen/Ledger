@@ -5,15 +5,19 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Paper,
   IconButton,
   Chip,
   Typography,
   TablePagination,
   Box,
+  Card,
+  CardContent,
+  useTheme,
+  useMediaQuery,
 } from '@mui/material';
 import { Edit as EditIcon, Delete as DeleteIcon } from '@mui/icons-material';
 import type { TransactionWithDetails } from '../types';
+import { formatAmount } from '../utils/format';
 
 interface TransactionListProps {
   transactions: TransactionWithDetails[];
@@ -36,15 +40,116 @@ export default function TransactionList({
   onEdit,
   onDelete,
 }: TransactionListProps) {
-  const formatAmount = (amount: number) => {
-    return new Intl.NumberFormat('zh-CN', {
-      style: 'currency',
-      currency: 'CNY',
-    }).format(amount);
-  };
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
+  // Mobile card layout
+  if (isMobile) {
+    return (
+      <Box>
+        {transactions.map((transaction) => (
+          <Card key={transaction.id} sx={{ mb: 1.5 }}>
+            <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                  <Box
+                    sx={{
+                      width: 40,
+                      height: 40,
+                      bgcolor: transaction.type === 'expense' ? 'error.light' : 'success.light',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: 1,
+                      fontSize: '1.1rem',
+                    }}
+                  >
+                    {transaction.category.icon}
+                  </Box>
+                  <Box>
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                      {transaction.category.name}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                      {transaction.date}
+                    </Typography>
+                  </Box>
+                </Box>
+                <Typography
+                  variant="body1"
+                  sx={{
+                    fontWeight: 700,
+                    fontFamily: '"DM Sans", sans-serif',
+                    color: transaction.type === 'expense' ? 'error.main' : 'success.main',
+                  }}
+                >
+                  {transaction.type === 'expense' ? '-' : '+'}
+                  {formatAmount(transaction.amount)}
+                </Typography>
+              </Box>
+
+              {transaction.note && (
+                <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1.5 }}>
+                  {transaction.note}
+                </Typography>
+              )}
+
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Box sx={{ display: 'flex', gap: 0.5 }}>
+                  {transaction.tags.map((tag) => (
+                    <Chip
+                      key={tag.id}
+                      label={tag.name}
+                      size="small"
+                      variant="outlined"
+                      sx={{ height: 20, fontSize: '0.65rem' }}
+                    />
+                  ))}
+                </Box>
+                <Box>
+                  <IconButton size="small" onClick={() => onEdit(transaction)}>
+                    <EditIcon fontSize="small" />
+                  </IconButton>
+                  <IconButton size="small" onClick={() => onDelete(transaction.id)}>
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                </Box>
+              </Box>
+            </CardContent>
+          </Card>
+        ))}
+
+        {transactions.length === 0 && (
+          <Box sx={{ textAlign: 'center', py: 6 }}>
+            <Typography variant="body1" sx={{ color: 'text.secondary' }}>
+              暂无记录
+            </Typography>
+          </Box>
+        )}
+
+        <TablePagination
+          component="div"
+          count={total}
+          page={page - 1}
+          onPageChange={(_, newPage) => onPageChange(newPage + 1)}
+          rowsPerPage={rowsPerPage}
+          onRowsPerPageChange={(e) => onRowsPerPageChange(parseInt(e.target.value, 10))}
+          rowsPerPageOptions={[10, 20, 50]}
+          labelRowsPerPage="每页"
+          sx={{
+            '.MuiTablePagination-toolbar': {
+              flexWrap: 'wrap',
+              justifyContent: 'center',
+            },
+          }}
+        />
+      </Box>
+    );
+  }
+
+  // Desktop table layout
   return (
-    <Paper>
+    <Card>
       <TableContainer>
         <Table>
           <TableHead>
@@ -59,24 +164,66 @@ export default function TransactionList({
           </TableHead>
           <TableBody>
             {transactions.map((transaction) => (
-              <TableRow key={transaction.id}>
-                <TableCell>{transaction.date}</TableCell>
+              <TableRow
+                key={transaction.id}
+                sx={{
+                  '&:hover': {
+                    bgcolor: 'action.hover',
+                  },
+                }}
+              >
                 <TableCell>
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Typography sx={{ mr: 1 }}>{transaction.category.icon}</Typography>
-                    {transaction.category.name}
+                  <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                    {transaction.date}
+                  </Typography>
+                </TableCell>
+                <TableCell>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                    <Box
+                      sx={{
+                        width: 32,
+                        height: 32,
+                        bgcolor: transaction.type === 'expense' ? 'error.light' : 'success.light',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderRadius: 1,
+                        fontSize: '0.9rem',
+                      }}
+                    >
+                      {transaction.category.icon}
+                    </Box>
+                    <Typography variant="body2">
+                      {transaction.category.name}
+                    </Typography>
                   </Box>
                 </TableCell>
-                <TableCell>{transaction.note || '-'}</TableCell>
                 <TableCell>
-                  {transaction.tags.map((tag) => (
-                    <Chip key={tag.id} label={tag.name} size="small" sx={{ mr: 0.5 }} />
-                  ))}
+                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                    {transaction.note || '-'}
+                  </Typography>
+                </TableCell>
+                <TableCell>
+                  <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                    {transaction.tags.map((tag) => (
+                      <Chip
+                        key={tag.id}
+                        label={tag.name}
+                        size="small"
+                        variant="outlined"
+                        sx={{ height: 22, fontSize: '0.65rem' }}
+                      />
+                    ))}
+                  </Box>
                 </TableCell>
                 <TableCell align="right">
                   <Typography
-                    color={transaction.type === 'expense' ? 'error' : 'success'}
-                    fontWeight="bold"
+                    variant="body2"
+                    sx={{
+                      fontWeight: 700,
+                      fontFamily: '"DM Sans", sans-serif',
+                      color: transaction.type === 'expense' ? 'error.main' : 'success.main',
+                    }}
                   >
                     {transaction.type === 'expense' ? '-' : '+'}
                     {formatAmount(transaction.amount)}
@@ -84,10 +231,10 @@ export default function TransactionList({
                 </TableCell>
                 <TableCell align="center">
                   <IconButton size="small" onClick={() => onEdit(transaction)}>
-                    <EditIcon />
+                    <EditIcon fontSize="small" />
                   </IconButton>
                   <IconButton size="small" onClick={() => onDelete(transaction.id)}>
-                    <DeleteIcon />
+                    <DeleteIcon fontSize="small" />
                   </IconButton>
                 </TableCell>
               </TableRow>
@@ -95,7 +242,7 @@ export default function TransactionList({
             {transactions.length === 0 && (
               <TableRow>
                 <TableCell colSpan={6} align="center">
-                  <Typography color="text.secondary" sx={{ py: 3 }}>
+                  <Typography color="text.secondary" sx={{ py: 4 }}>
                     暂无记录
                   </Typography>
                 </TableCell>
@@ -114,6 +261,6 @@ export default function TransactionList({
         rowsPerPageOptions={[10, 20, 50]}
         labelRowsPerPage="每页条数"
       />
-    </Paper>
+    </Card>
   );
 }

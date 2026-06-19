@@ -1,5 +1,15 @@
 import axios from 'axios';
-import type { TransactionFilter, TransactionWithDetails, Category, Tag, StatsData, Budget, BudgetStatus } from '../types';
+import type {
+  TransactionFilter,
+  TransactionWithDetails,
+  Category,
+  Tag,
+  StatsData,
+  Budget,
+  BudgetStatus,
+  ImportFileSource,
+  ImportResult,
+} from '../types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -57,5 +67,11 @@ export const importExportApi = {
   export: (format: 'json' | 'csv') =>
     api.get('/export', { params: { format }, responseType: 'blob' }),
   import: (transactions: unknown[]) =>
-    api.post('/import', { transactions }),
+    api.post<ImportResult>('/import', { transactions }),
+  importFile: (file: File, source: ImportFileSource) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('source', source);
+    return api.post<ImportResult>('/import/file', formData);
+  },
 };

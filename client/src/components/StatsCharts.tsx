@@ -1,4 +1,4 @@
-import { Box, Grid, Card, CardContent, Typography } from '@mui/material';
+import { Box, Grid, Card, CardContent, Typography, useTheme, useMediaQuery } from '@mui/material';
 import {
   PieChart,
   Pie,
@@ -20,13 +20,31 @@ interface StatsChartsProps {
   stats: StatsData;
 }
 
-const COLORS = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F', '#BDC3C7'];
+const COLORS = [
+  '#c9a84c', // Gold
+  '#2d6a4f', // Forest
+  '#9b2226', // Crimson
+  '#0f4c75', // Navy
+  '#e36414', // Amber
+  '#6a4c93', // Plum
+  '#1a936f', // Emerald
+  '#114b5f', // Teal
+  '#f4a261', // Sandy
+];
+
+const formatKAxis = (value: number) => `¥${(value / 1000).toFixed(0)}k`;
 
 export default function StatsCharts({ stats }: StatsChartsProps) {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const isDark = theme.palette.mode === 'dark';
+
   const formatAmount = (amount: number) => {
     return new Intl.NumberFormat('zh-CN', {
       style: 'currency',
       currency: 'CNY',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
     }).format(amount);
   };
 
@@ -57,122 +75,259 @@ export default function StatsCharts({ stats }: StatsChartsProps) {
     return acc;
   }, [] as any[]);
 
+  const tooltipStyle = {
+    backgroundColor: isDark ? '#12121a' : '#ffffff',
+    border: `1px solid ${isDark ? '#1f1f2e' : '#e5e2db'}`,
+    borderRadius: 2,
+    fontSize: '0.8rem',
+    fontFamily: '"DM Sans", sans-serif',
+  };
+
   return (
     <Grid container spacing={3}>
-      <Grid size={{ xs: 12, md: 6 }}>
-        <Card>
+      {/* Summary Cards */}
+      <Grid size={{ xs: 12, md: 4 }}>
+        <Card sx={{ height: '100%' }}>
           <CardContent>
-            <Typography variant="h6" gutterBottom>
-              支出分类占比
-            </Typography>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={categoryData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {categoryData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value) => formatAmount(value as number)} />
-              </PieChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      </Grid>
-
-      <Grid size={{ xs: 12, md: 6 }}>
-        <Card>
-          <CardContent>
-            <Typography variant="h6" gutterBottom>
+            <Typography variant="caption" sx={{ color: 'text.secondary', mb: 3, display: 'block' }}>
               收支概览
             </Typography>
-            <Box sx={{ display: 'flex', justifyContent: 'space-around', mb: 2 }}>
-              <Box sx={{ textAlign: 'center' }}>
-                <Typography color="success.main" variant="h4">
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <Box>
+                <Typography variant="caption" sx={{ color: 'success.main', mb: 0.5, display: 'block' }}>
+                  总收入
+                </Typography>
+                <Typography
+                  variant="h4"
+                  sx={{
+                    fontFamily: '"Playfair Display", serif',
+                    color: 'success.main',
+                  }}
+                >
                   {formatAmount(stats.totalIncome)}
                 </Typography>
-                <Typography color="text.secondary">总收入</Typography>
               </Box>
-              <Box sx={{ textAlign: 'center' }}>
-                <Typography color="error.main" variant="h4">
+              <Box>
+                <Typography variant="caption" sx={{ color: 'error.main', mb: 0.5, display: 'block' }}>
+                  总支出
+                </Typography>
+                <Typography
+                  variant="h4"
+                  sx={{
+                    fontFamily: '"Playfair Display", serif',
+                    color: 'error.main',
+                  }}
+                >
                   {formatAmount(stats.totalExpense)}
                 </Typography>
-                <Typography color="text.secondary">总支出</Typography>
               </Box>
-              <Box sx={{ textAlign: 'center' }}>
-                <Typography color="primary.main" variant="h4">
+              <Box sx={{ pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
+                <Typography variant="caption" sx={{ color: 'secondary.main', mb: 0.5, display: 'block' }}>
+                  结余
+                </Typography>
+                <Typography
+                  variant="h4"
+                  sx={{
+                    fontFamily: '"Playfair Display", serif',
+                    color: stats.balance >= 0 ? 'success.main' : 'error.main',
+                  }}
+                >
                   {formatAmount(stats.balance)}
                 </Typography>
-                <Typography color="text.secondary">结余</Typography>
               </Box>
             </Box>
           </CardContent>
         </Card>
       </Grid>
 
+      {/* Pie Chart */}
+      <Grid size={{ xs: 12, md: 8 }}>
+        <Card sx={{ height: '100%' }}>
+          <CardContent>
+            <Typography variant="caption" sx={{ color: 'text.secondary', mb: 3, display: 'block' }}>
+              分类支出占比
+            </Typography>
+            <ResponsiveContainer width="100%" height={isMobile ? 250 : 300}>
+              <PieChart>
+                <Pie
+                  data={categoryData}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={isMobile ? undefined : ({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  outerRadius={isMobile ? 80 : 100}
+                  innerRadius={isMobile ? 40 : 50}
+                  fill="#8884d8"
+                  dataKey="value"
+                  strokeWidth={0}
+                >
+                  {categoryData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  formatter={(value) => formatAmount(value as number)}
+                  contentStyle={tooltipStyle}
+                />
+                {isMobile && (
+                  <Legend
+                    layout="horizontal"
+                    align="center"
+                    verticalAlign="bottom"
+                    iconSize={8}
+                    formatter={(value) => <Typography component="span" sx={{ fontSize: '0.7rem' }}>{value}</Typography>}
+                  />
+                )}
+              </PieChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </Grid>
+
+      {/* Line Chart - Daily Trends */}
       <Grid size={{ xs: 12 }}>
         <Card>
           <CardContent>
-            <Typography variant="h6" gutterBottom>
+            <Typography variant="caption" sx={{ color: 'text.secondary', mb: 3, display: 'block' }}>
               每日收支趋势
             </Typography>
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={isMobile ? 250 : 350}>
               <LineChart data={dailyData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis />
-                <Tooltip formatter={(value) => formatAmount(value as number)} />
-                <Legend />
-                <Line type="monotone" dataKey="income" name="收入" stroke="#4CAF50" />
-                <Line type="monotone" dataKey="expense" name="支出" stroke="#F44336" />
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke={isDark ? '#1f1f2e' : '#e5e2db'}
+                />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fontSize: 11, fill: isDark ? '#9ca3af' : '#6b7280' }}
+                  tickLine={false}
+                  axisLine={{ stroke: isDark ? '#1f1f2e' : '#e5e2db' }}
+                />
+                <YAxis
+                  tick={{ fontSize: 11, fill: isDark ? '#9ca3af' : '#6b7280' }}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={formatKAxis}
+                />
+                <Tooltip
+                  formatter={(value) => formatAmount(value as number)}
+                  contentStyle={tooltipStyle}
+                />
+                <Legend
+                  iconSize={8}
+                   formatter={(value) => <Typography component="span" sx={{ fontSize: '0.75rem' }}>{value}</Typography>}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="income"
+                  name="收入"
+                  stroke="#2d6a4f"
+                  strokeWidth={2}
+                  dot={false}
+                  activeDot={{ r: 4, fill: '#2d6a4f' }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="expense"
+                  name="支出"
+                  stroke="#9b2226"
+                  strokeWidth={2}
+                  dot={false}
+                  activeDot={{ r: 4, fill: '#9b2226' }}
+                />
               </LineChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
       </Grid>
 
-      <Grid size={{ xs: 12 }}>
+      {/* Bar Chart - Monthly Comparison */}
+      <Grid size={{ xs: 12, md: 6 }}>
         <Card>
           <CardContent>
-            <Typography variant="h6" gutterBottom>
+            <Typography variant="caption" sx={{ color: 'text.secondary', mb: 3, display: 'block' }}>
               月度收支对比
             </Typography>
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={isMobile ? 250 : 300}>
               <BarChart data={monthlyData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" />
-                <YAxis />
-                <Tooltip formatter={(value) => formatAmount(value as number)} />
-                <Legend />
-                <Bar dataKey="income" name="收入" fill="#4CAF50" />
-                <Bar dataKey="expense" name="支出" fill="#F44336" />
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke={isDark ? '#1f1f2e' : '#e5e2db'}
+                />
+                <XAxis
+                  dataKey="month"
+                  tick={{ fontSize: 11, fill: isDark ? '#9ca3af' : '#6b7280' }}
+                  tickLine={false}
+                  axisLine={{ stroke: isDark ? '#1f1f2e' : '#e5e2db' }}
+                />
+                <YAxis
+                  tick={{ fontSize: 11, fill: isDark ? '#9ca3af' : '#6b7280' }}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={formatKAxis}
+                />
+                <Tooltip
+                  formatter={(value) => formatAmount(value as number)}
+                  contentStyle={tooltipStyle}
+                />
+                <Legend
+                  iconSize={8}
+                   formatter={(value) => <Typography component="span" sx={{ fontSize: '0.75rem' }}>{value}</Typography>}
+                />
+                <Bar
+                  dataKey="income"
+                  name="收入"
+                  fill="#2d6a4f"
+                  radius={[2, 2, 0, 0]}
+                />
+                <Bar
+                  dataKey="expense"
+                  name="支出"
+                  fill="#9b2226"
+                  radius={[2, 2, 0, 0]}
+                />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
       </Grid>
 
-      <Grid size={{ xs: 12 }}>
+      {/* Horizontal Bar Chart - Category Ranking */}
+      <Grid size={{ xs: 12, md: 6 }}>
         <Card>
           <CardContent>
-            <Typography variant="h6" gutterBottom>
+            <Typography variant="caption" sx={{ color: 'text.secondary', mb: 3, display: 'block' }}>
               分类支出排行
             </Typography>
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={isMobile ? 250 : 300}>
               <BarChart data={categoryData} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" />
-                <YAxis dataKey="name" type="category" width={80} />
-                <Tooltip formatter={(value) => formatAmount(value as number)} />
-                <Bar dataKey="value" fill="#8884d8">
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke={isDark ? '#1f1f2e' : '#e5e2db'}
+                />
+                <XAxis
+                  type="number"
+                  tick={{ fontSize: 11, fill: isDark ? '#9ca3af' : '#6b7280' }}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(value) => `¥${(value / 1000).toFixed(1)}k`}
+                />
+                <YAxis
+                  dataKey="name"
+                  type="category"
+                  width={isMobile ? 60 : 80}
+                  tick={{ fontSize: 11, fill: isDark ? '#9ca3af' : '#6b7280' }}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <Tooltip
+                  formatter={(value) => formatAmount(value as number)}
+                  contentStyle={tooltipStyle}
+                />
+                <Bar
+                  dataKey="value"
+                  radius={[0, 2, 2, 0]}
+                >
                   {categoryData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
