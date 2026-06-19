@@ -45,10 +45,12 @@ export class BudgetService {
 
   getBudgetStatus(month: string): { budget: Budget; spent: number; remaining: number }[] {
     const budgets = this.getAll();
-    const startDate = `${month}-01`;
-    const endDate = `${month}-31`;
+    const year = month.substring(0, 4);
 
     return budgets.map(budget => {
+      const { startDate, endDate } = budget.period === 'yearly'
+        ? { startDate: `${year}-01-01`, endDate: `${year}-12-31` }
+        : getMonthRange(month);
       let spent = 0;
 
       if (budget.category_id) {
@@ -74,6 +76,15 @@ export class BudgetService {
       };
     });
   }
+}
+
+function getMonthRange(month: string): { startDate: string; endDate: string } {
+  const [year, monthPart] = month.split('-').map(Number);
+  const lastDay = new Date(year, monthPart, 0).getDate();
+  return {
+    startDate: `${month}-01`,
+    endDate: `${month}-${String(lastDay).padStart(2, '0')}`,
+  };
 }
 
 export const budgetService = new BudgetService();

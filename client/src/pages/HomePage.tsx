@@ -3,132 +3,74 @@ import {
   Typography,
   Box,
   Grid,
-  Card,
-  CardContent,
-  Button,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemIcon,
-  Chip,
 } from '@mui/material';
-import {
-  TrendingUp as IncomeIcon,
-  TrendingDown as ExpenseIcon,
-  AccountBalance as BalanceIcon,
-  Add as AddIcon,
-} from '@mui/icons-material';
-import { useNavigate } from 'react-router-dom';
 import { useTransactionStore } from '../stores/transactionStore';
+import { useSnackbarStore } from '../stores/snackbarStore';
+import { StatsCards, RecentTransactions, QuickActions } from '../components/Dashboard';
+import { getCurrentMonthRange } from '../utils/format';
 
 export default function HomePage() {
-  const navigate = useNavigate();
   const { transactions, stats, fetchTransactions, fetchStats } = useTransactionStore();
+  const { showSnackbar } = useSnackbarStore();
 
   useEffect(() => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const startDate = `${year}-${month}-01`;
-    const endDate = `${year}-${month}-31`;
-
-    fetchStats({ start_date: startDate, end_date: endDate });
-    fetchTransactions({ page: 1, limit: 5, sort: 'date', order: 'desc' });
+    const { startDate, endDate } = getCurrentMonthRange();
+    Promise.all([
+      fetchStats({ start_date: startDate, end_date: endDate }),
+      fetchTransactions({ page: 1, limit: 5, sort: 'date', order: 'desc' }),
+    ]).catch(() => {
+      showSnackbar('加载数据失败，请刷新页面重试', 'error');
+    });
   }, [fetchStats, fetchTransactions]);
-
-  const formatAmount = (amount: number) => {
-    return new Intl.NumberFormat('zh-CN', {
-      style: 'currency',
-      currency: 'CNY',
-    }).format(amount);
-  };
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>
-        本月概览
-      </Typography>
-
-      <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid size={{ xs: 12, sm: 4 }}>
-          <Card>
-            <CardContent>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                <IncomeIcon color="success" sx={{ mr: 1 }} />
-                <Typography color="text.secondary">本月收入</Typography>
-              </Box>
-              <Typography variant="h4" color="success.main">
-                {stats ? formatAmount(stats.totalIncome) : '¥0.00'}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid size={{ xs: 12, sm: 4 }}>
-          <Card>
-            <CardContent>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                <ExpenseIcon color="error" sx={{ mr: 1 }} />
-                <Typography color="text.secondary">本月支出</Typography>
-              </Box>
-              <Typography variant="h4" color="error.main">
-                {stats ? formatAmount(stats.totalExpense) : '¥0.00'}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid size={{ xs: 12, sm: 4 }}>
-          <Card>
-            <CardContent>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                <BalanceIcon color="primary" sx={{ mr: 1 }} />
-                <Typography color="text.secondary">本月结余</Typography>
-              </Box>
-              <Typography variant="h4" color="primary.main">
-                {stats ? formatAmount(stats.balance) : '¥0.00'}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-        <Typography variant="h5">最近记录</Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => navigate('/transactions')}
+      {/* Hero Section */}
+      <Box sx={{ mb: 4 }}>
+        <Typography
+          variant="caption"
+          sx={{ color: 'secondary.main', mb: 1, display: 'block' }}
         >
-          快速记账
-        </Button>
+          {new Date().getFullYear()}年{new Date().getMonth() + 1}月
+        </Typography>
+        <Typography
+          variant="h3"
+          sx={{
+            fontFamily: '"Playfair Display", serif',
+            fontWeight: 700,
+            mb: 1,
+            fontSize: { xs: '2rem', md: '2.5rem' },
+          }}
+        >
+          本月概览
+        </Typography>
+        <Typography variant="body1" sx={{ color: 'text.secondary', maxWidth: 480 }}>
+          追踪您的每一笔收支，让财务管理变得简单而优雅
+        </Typography>
       </Box>
 
-      <Card>
-        <List>
-          {transactions.map((transaction) => (
-            <ListItem key={transaction.id} divider>
-              <ListItemIcon>
-                <Typography>{transaction.category.icon}</Typography>
-              </ListItemIcon>
-              <ListItemText
-                primary={transaction.note || transaction.category.name}
-                secondary={transaction.date}
-              />
-              <Chip
-                label={`${transaction.type === 'expense' ? '-' : '+'}${formatAmount(transaction.amount)}`}
-                color={transaction.type === 'expense' ? 'error' : 'success'}
-                variant="outlined"
-              />
-            </ListItem>
-          ))}
-          {transactions.length === 0 && (
-            <ListItem>
-              <ListItemText primary="暂无记录" secondary="点击上方按钮开始记账" />
-            </ListItem>
-          )}
-        </List>
-      </Card>
+      {/* Stats Cards */}
+      <StatsCards
+        totalIncome={stats?.totalIncome || 0}
+        totalExpense={stats?.totalExpense || 0}
+        balance={stats?.balance || 0}
+      />
+
+      {/* Two Column Layout */}
+      <Grid container spacing={4}>
+        {/* Left Column */}
+        <Grid size={{ xs: 12, md: 4 }}>
+          <QuickActions
+            totalIncome={stats?.totalIncome || 0}
+            totalExpense={stats?.totalExpense || 0}
+          />
+        </Grid>
+
+        {/* Right Column */}
+        <Grid size={{ xs: 12, md: 8 }}>
+          <RecentTransactions transactions={transactions} />
+        </Grid>
+      </Grid>
     </Box>
   );
 }

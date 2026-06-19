@@ -10,7 +10,7 @@ export class TagService {
     return db.prepare('SELECT * FROM tags WHERE id = ?').get(id) as Tag | undefined;
   }
 
-  getByName(name: string): Tag | undefined {
+  private getByName(name: string): Tag | undefined {
     return db.prepare('SELECT * FROM tags WHERE name = ?').get(name) as Tag | undefined;
   }
 

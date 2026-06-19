@@ -5,6 +5,13 @@ export interface Transaction {
   category_id: number;
   note: string | null;
   date: string;
+  source: string | null;
+  source_transaction_id: string | null;
+  source_merchant_order_id: string | null;
+  source_category: string | null;
+  source_time: string | null;
+  payment_method: string | null;
+  source_status: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -64,4 +71,15 @@ export interface BudgetStatus {
   budget: Budget;
   spent: number;
   remaining: number;
+}
+
+export type ImportFileSource = 'auto' | 'standard' | 'alipay' | 'wechat';
+
+export interface ImportResult {
+  success: number;
+  failed: number;
+  skipped: number;
+  duplicates: number;
+  createdCategories: number;
+  errors: string[];
 }

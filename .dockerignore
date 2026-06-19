@@ -1,0 +1,15 @@
+.git
+.github
+.gitignore
+README.md
+docs
+data
+**/node_modules
+**/dist
+**/test-results
+**/playwright-report
+client/.vite
+server/data
+*.log
+.env
+.env.*

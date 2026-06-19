@@ -1,5 +1,7 @@
 # 个人记账本实现计划
 
+> 历史说明：本文是 2026-06-17 的初始实现计划，部分技术栈版本、端口和任务勾选状态已经滞后于当前代码。当前运行方式、导入规则和部署说明以根目录 `README.md` 为准。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use compose:subagent (recommended) or compose:execute to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 构建一个支持多维度筛选、统计图表、预算管理的个人记账应用

@@ -13,6 +13,10 @@ export class CategoryService {
     return db.prepare('SELECT * FROM categories WHERE id = ?').get(id) as Category | undefined;
   }
 
+  getByNameAndType(name: string, type: 'income' | 'expense'): Category | undefined {
+    return db.prepare('SELECT * FROM categories WHERE name = ? AND type = ?').get(name, type) as Category | undefined;
+  }
+
   create(data: { name: string; type: 'income' | 'expense'; icon?: string; color?: string }): Category {
     const maxOrder = db.prepare('SELECT MAX(sort_order) as max FROM categories WHERE type = ?').get(data.type) as { max: number | null };
     const sortOrder = (maxOrder.max || 0) + 1;

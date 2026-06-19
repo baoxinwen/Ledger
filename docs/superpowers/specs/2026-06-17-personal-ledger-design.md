@@ -58,9 +58,9 @@
 - 超支预警提醒
 
 #### 2.1.5 数据导入导出
-- **导入格式**: CSV、JSON
+- **导入格式**: 标准 CSV、JSON，支付宝交易明细 CSV，微信支付账单 XLSX
 - **导出格式**: CSV、JSON
-- **导入字段映射**: 支持自定义字段映射
+- **导入规则**: 支付宝/微信导入按现金流处理，跳过不计收支/中性/关闭/失败/取消交易，并通过来源交易单号去重
 
 ### 2.2 分类体系
 
@@ -113,15 +113,15 @@
 
 | 层级 | 技术 | 版本 | 用途 |
 |------|------|------|------|
-| 前端框架 | React | 18 | UI构建 |
+| 前端框架 | React | 19 | UI构建 |
 | 类型系统 | TypeScript | 5.x | 类型安全 |
-| UI组件库 | MUI (Material-UI) | 5.x | Material Design组件 |
-| 状态管理 | Zustand | 4.x | 轻量级状态管理 |
+| UI组件库 | MUI (Material-UI) | 7.x | Material Design组件 |
+| 状态管理 | Zustand | 5.x | 轻量级状态管理 |
 | 图表库 | Recharts | 2.x | 数据可视化 |
 | HTTP客户端 | Axios | 1.x | API请求 |
-| 路由 | React Router | 6.x | 页面路由 |
-| 后端框架 | Express.js | 4.x | API服务 |
-| 数据库 | better-sqlite3 | 9.x | 本地SQLite数据库 |
+| 路由 | React Router | 7.x | 页面路由 |
+| 后端框架 | Express.js | 5.x | API服务 |
+| 数据库 | better-sqlite3 | 12.x | 本地SQLite数据库 |
 | 容器化 | Docker + Docker Compose | - | 部署 |
 
 ### 3.2 项目结构
@@ -184,6 +184,13 @@ CREATE TABLE transactions (
   category_id INTEGER NOT NULL,
   note TEXT,
   date TEXT NOT NULL,
+  source TEXT,
+  source_transaction_id TEXT,
+  source_merchant_order_id TEXT,
+  source_category TEXT,
+  source_time TEXT,
+  payment_method TEXT,
+  source_status TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (category_id) REFERENCES categories(id)
@@ -192,6 +199,9 @@ CREATE TABLE transactions (
 CREATE INDEX idx_transactions_date ON transactions(date);
 CREATE INDEX idx_transactions_type ON transactions(type);
 CREATE INDEX idx_transactions_category ON transactions(category_id);
+CREATE UNIQUE INDEX idx_transactions_source_unique
+  ON transactions(source, source_transaction_id)
+  WHERE source IS NOT NULL AND source_transaction_id IS NOT NULL;
 ```
 
 #### 分类表 (categories)
@@ -280,6 +290,7 @@ DELETE /api/budgets/:id           # 删除预算
 #### 导入导出 API
 ```
 POST   /api/import                # 导入数据
+POST   /api/import/file           # 导入标准/支付宝/微信账单文件
 GET    /api/export                # 导出数据
 ```
 

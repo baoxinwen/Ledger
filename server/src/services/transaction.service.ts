@@ -1,10 +1,10 @@
 import db from '../database';
-import { Transaction, TransactionWithDetails, TransactionFilter } from '../types';
+import { Transaction, TransactionWithDetails, TransactionFilter, ImportMetadata } from '../types';
 import { categoryService } from './category.service';
 import { tagService } from './tag.service';
 
 export class TransactionService {
-  getAll(filter: TransactionFilter = {}): { data: TransactionWithDetails[]; total: number } {
+  private buildWhereClause(filter: TransactionFilter): { whereClause: string; params: any[] } {
     const {
       type,
       category_id,
@@ -14,10 +14,6 @@ export class TransactionService {
       min_amount,
       max_amount,
       keyword,
-      page = 1,
-      limit = 20,
-      sort = 'date',
-      order = 'desc'
     } = filter;
 
     const whereClauses: string[] = [];
@@ -57,6 +53,18 @@ export class TransactionService {
     }
 
     const whereClause = whereClauses.length > 0 ? 'WHERE ' + whereClauses.join(' AND ') : '';
+    return { whereClause, params };
+  }
+
+  getAll(filter: TransactionFilter = {}): { data: TransactionWithDetails[]; total: number } {
+    const {
+      page = 1,
+      limit = 20,
+      sort = 'date',
+      order = 'desc'
+    } = filter;
+
+    const { whereClause, params } = this.buildWhereClause(filter);
 
     const countSql = `SELECT COUNT(*) as total FROM transactions t ${whereClause}`;
     const total = (db.prepare(countSql).get(...params) as { total: number }).total;
@@ -73,7 +81,6 @@ export class TransactionService {
     `;
 
     const transactions = db.prepare(dataSql).all(...params, limit, offset) as Transaction[];
-
     const data = transactions.map(t => this.enrichTransaction(t));
 
     return { data, total };
@@ -92,18 +99,41 @@ export class TransactionService {
     note?: string;
     date: string;
     tag_ids?: number[];
-  }): TransactionWithDetails {
+  } & ImportMetadata): TransactionWithDetails {
     const result = db.prepare(
-      'INSERT INTO transactions (type, amount, category_id, note, date) VALUES (?, ?, ?, ?, ?)'
-    ).run(data.type, data.amount, data.category_id, data.note || null, data.date);
+      `INSERT INTO transactions (
+        type,
+        amount,
+        category_id,
+        note,
+        date,
+        source,
+        source_transaction_id,
+        source_merchant_order_id,
+        source_category,
+        source_time,
+        payment_method,
+        source_status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      data.type,
+      data.amount,
+      data.category_id,
+      data.note || null,
+      data.date,
+      data.source || null,
+      data.source_transaction_id || null,
+      data.source_merchant_order_id || null,
+      data.source_category || null,
+      data.source_time || null,
+      data.payment_method || null,
+      data.source_status || null
+    );
 
     const transactionId = result.lastInsertRowid as number;
 
     if (data.tag_ids && data.tag_ids.length > 0) {
-      const insertTag = db.prepare('INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (?, ?)');
-      data.tag_ids.forEach(tagId => {
-        insertTag.run(transactionId, tagId);
-      });
+      this.syncTransactionTags(transactionId, data.tag_ids);
     }
 
     return this.getById(transactionId)!;
@@ -139,13 +169,7 @@ export class TransactionService {
     db.prepare('UPDATE transactions SET updated_at = datetime("now") WHERE id = ?').run(id);
 
     if (data.tag_ids !== undefined) {
-      db.prepare('DELETE FROM transaction_tags WHERE transaction_id = ?').run(id);
-      if (data.tag_ids.length > 0) {
-        const insertTag = db.prepare('INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (?, ?)');
-        data.tag_ids.forEach(tagId => {
-          insertTag.run(id, tagId);
-        });
-      }
+      this.syncTransactionTags(id, data.tag_ids);
     }
 
     return this.getById(id) ?? null;
@@ -154,6 +178,15 @@ export class TransactionService {
   delete(id: number): boolean {
     const result = db.prepare('DELETE FROM transactions WHERE id = ?').run(id);
     return result.changes > 0;
+  }
+
+  existsBySource(source: string, sourceTransactionId: string): boolean {
+    const row = db.prepare(`
+      SELECT id FROM transactions
+      WHERE source = ? AND source_transaction_id = ?
+      LIMIT 1
+    `).get(source, sourceTransactionId);
+    return Boolean(row);
   }
 
   getStats(query: { start_date?: string; end_date?: string; type?: 'income' | 'expense' }) {
@@ -215,6 +248,16 @@ export class TransactionService {
     const category = categoryService.getById(transaction.category_id)!;
     const tags = tagService.getByTransactionId(transaction.id);
     return { ...transaction, category, tags };
+  }
+
+  private syncTransactionTags(transactionId: number, tagIds: number[]): void {
+    db.prepare('DELETE FROM transaction_tags WHERE transaction_id = ?').run(transactionId);
+    if (tagIds.length > 0) {
+      const insertTag = db.prepare('INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (?, ?)');
+      tagIds.forEach(tagId => {
+        insertTag.run(transactionId, tagId);
+      });
+    }
   }
 }
 
