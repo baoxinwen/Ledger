@@ -2,6 +2,10 @@ FROM node:22-bookworm-slim AS build
 
 WORKDIR /app
 
+ENV NPM_CONFIG_REGISTRY=https://registry.npmjs.org/ \
+  NPM_CONFIG_REPLACE_REGISTRY_HOST=always \
+  npm_config_nodedir=/usr/local
+
 RUN apt-get update \
   && apt-get install -y --no-install-recommends python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
