@@ -1,3 +1,4 @@
+// 主布局组件：统一侧边导航、顶部栏、暗色模式切换和页面容器。
 import { useState } from 'react';
 import {
   Box,

@@ -1,3 +1,4 @@
+// 分类服务测试保护预置分类、自定义分类和名称类型匹配行为。
 import db from '../setup';
 
 describe('CategoryService', () => {

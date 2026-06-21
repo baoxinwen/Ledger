@@ -1,3 +1,4 @@
+// 标签服务测试保护标签唯一性和交易标签关联查询。
 import db from '../setup';
 
 describe('TagService', () => {

@@ -1,3 +1,4 @@
+// 首页仪表盘：汇总收支统计、最近交易和常用入口。
 import { useEffect } from 'react';
 import {
   Typography,

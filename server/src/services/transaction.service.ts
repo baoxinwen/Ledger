@@ -1,3 +1,4 @@
+// 交易服务封装 transactions 表读写，并统一补全分类和标签明细。
 import db from '../database';
 import { Transaction, TransactionWithDetails, TransactionFilter, ImportMetadata } from '../types';
 import { categoryService } from './category.service';

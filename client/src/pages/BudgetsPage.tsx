@@ -1,3 +1,4 @@
+// 预算页：管理月度/年度预算，并展示每个预算的执行状态。
 import { useEffect, useState } from 'react';
 import {
   Box,

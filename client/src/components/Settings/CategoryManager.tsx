@@ -1,3 +1,4 @@
+// 分类管理组件：负责分类列表、创建、编辑和删除交互。
 import { useState } from 'react';
 import {
   Box,

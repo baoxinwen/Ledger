@@ -1,3 +1,4 @@
+// MUI 主题集中定义应用色彩、字体和组件默认视觉风格。
 import { createTheme } from '@mui/material/styles';
 
 // Neo-Brutalist × Financial Times aesthetic

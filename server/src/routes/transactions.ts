@@ -1,3 +1,4 @@
+// 交易路由：对外提供收支记录的查询、统计、创建、更新和删除接口。
 import { Router, Request, Response } from 'express';
 import { transactionService } from '../services/transaction.service';
 

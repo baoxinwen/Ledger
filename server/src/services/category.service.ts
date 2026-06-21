@@ -1,3 +1,4 @@
+// 分类服务封装分类表操作，账单导入会按“名称 + 类型”精确匹配分类。
 import db from '../database';
 import { Category } from '../types';
 

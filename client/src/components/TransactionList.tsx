@@ -1,3 +1,4 @@
+// 交易列表：桌面端使用表格，移动端切换为卡片布局。
 import {
   Table,
   TableBody,

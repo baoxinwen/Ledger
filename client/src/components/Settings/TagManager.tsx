@@ -1,3 +1,4 @@
+// 标签管理组件：负责标签创建和删除，导入来源标签也会显示在这里。
 import { useState } from 'react';
 import {
   Box,

@@ -1,3 +1,4 @@
+// 应用 Logo：在导航和移动端抽屉中保持一致的品牌展示。
 import { Box, Typography } from '@mui/material';
 
 interface LogoProps {

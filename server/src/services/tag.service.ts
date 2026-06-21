@@ -1,3 +1,4 @@
+// 标签服务保证标签名唯一，并提供交易到标签的反向查询能力。
 import db from '../database';
 import { Tag } from '../types';
 

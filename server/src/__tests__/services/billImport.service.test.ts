@@ -1,3 +1,4 @@
+// 账单导入测试覆盖支付宝/微信解析、0 元抵扣、跳过、重复和诊断信息。
 jest.mock('../../database', () => ({
   __esModule: true,
   default: require('../setup').default,
@@ -15,7 +16,7 @@ describe('BillImportService', () => {
     db.exec('DELETE FROM categories');
   });
 
-  it('imports Alipay cashflow rows, creates categories, skips neutral and closed rows, and deduplicates', () => {
+  it('imports Alipay cashflow rows, creates categories, keeps zero-amount payment rows, and deduplicates', () => {
     const csv = [
       '导出信息：',
       '交易时间,交易分类,交易对方,对方账号,商品说明,收/支,金额,收/付款方式,交易状态,交易订单号,商家订单号,备注,',
@@ -23,41 +24,71 @@ describe('BillImportService', () => {
       '2018-12-31 14:13:34,收入,**霞,136******95,商品,收入,305.00,,交易成功,2018123122001435710556446856	,15462368149702192735710	,,',
       '2018-12-30 16:13:29,服饰装扮,店铺,/,退款,不计收支,97.05,余额,退款成功,skip1,skip1,,',
       '2018-12-30 12:16:26,服饰装扮,店铺,/,订单,支出,99.00,银行卡,交易关闭,skip2,skip2,,',
+      '2018-12-29 12:16:26,其他,朋友,/,收款,支出,0.00,余额,交易成功,skip3,skip3,,',
     ].join('\n');
 
     const parsed = parseAlipayBill(csv);
-    expect(parsed).toHaveLength(2);
+    expect(parsed).toHaveLength(3);
     expect(parsed[0].source).toBe('alipay');
     expect(parsed[0].source_transaction_id).toBe('2018123122001417190556296465');
+    expect(parsed[2].amount).toBe(0);
+    expect(parsed[2].payment_method).toBe('余额');
+    expect(parsed[2].note).toContain('支付方式: 余额');
 
     const alipayBuffer = iconv.encode(csv, 'gb18030');
     const firstImport = billImportService.importFile(alipayBuffer, 'alipay.csv', 'alipay');
     expect(firstImport).toMatchObject({
-      success: 2,
+      success: 3,
       skipped: 2,
       duplicates: 0,
       failed: 0,
-      createdCategories: 2,
+      createdCategories: 3,
     });
+    expect(firstImport.errors).toEqual([]);
+    expect(firstImport.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        outcome: 'skipped',
+        row: 5,
+        reason: expect.stringContaining('不属于收入或支出'),
+        raw: expect.objectContaining({ 商品说明: '退款' }),
+      }),
+      expect.objectContaining({
+        outcome: 'skipped',
+        row: 6,
+        reason: expect.stringContaining('交易状态'),
+        raw: expect.objectContaining({ 交易状态: '交易关闭' }),
+      }),
+    ]));
 
     const secondImport = billImportService.importFile(alipayBuffer, 'alipay.csv', 'alipay');
     expect(secondImport).toMatchObject({
       success: 0,
       skipped: 2,
-      duplicates: 2,
+      duplicates: 3,
       failed: 0,
       createdCategories: 0,
     });
+    expect(secondImport.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        outcome: 'duplicate',
+        source_transaction_id: 'skip3',
+        raw: expect.objectContaining({ '收/付款方式': '余额' }),
+      }),
+    ]));
 
     const transactions = db.prepare('SELECT * FROM transactions ORDER BY amount').all() as any[];
-    expect(transactions).toHaveLength(2);
-    expect(transactions[0].source_category).toBe('餐饮美食');
-    expect(transactions[0].payment_method).toBe('花呗&红包');
+    expect(transactions).toHaveLength(3);
+    const milkTea = transactions.find((transaction) => transaction.source_transaction_id === '2018123122001417190556296465');
+    const zeroAmount = transactions.find((transaction) => transaction.source_transaction_id === 'skip3');
+    expect(milkTea.source_category).toBe('餐饮美食');
+    expect(milkTea.payment_method).toBe('花呗&红包');
+    expect(zeroAmount.amount).toBe(0);
+    expect(zeroAmount.note).toContain('支付方式: 余额');
     expect(db.prepare('SELECT * FROM categories WHERE name = ? AND type = ?').get('餐饮美食', 'expense')).toBeDefined();
     expect(db.prepare('SELECT * FROM tags WHERE name = ?').get('支付宝')).toBeDefined();
   });
 
-  it('imports WeChat XLSX rows with currency symbols and skips neutral rows', () => {
+  it('imports WeChat XLSX rows with currency symbols and keeps zero-amount payment rows', () => {
     const workbook = createMinimalXlsx([
       ['微信支付账单明细'],
       ['----------------------微信支付账单明细列表--------------------'],
@@ -65,26 +96,73 @@ describe('BillImportService', () => {
       ['2025-07-01 21:48:38', '转账', '朋友', '转账备注:微信转账', '收入', '¥6.66', '/', '已存入零钱', 'wx-income-1', '/', '/'],
       ['2025-07-01 20:25:31', '商户消费', '智行物联', '充电费用', '支出', '¥1.00', '零钱', '支付成功', 'wx-expense-1', 'merchant-1', '/'],
       ['2025-06-01 09:00:00', '零钱充值', '/', '/', '/', '¥5000.00', '银行卡', '充值成功', 'neutral-1', '/', '/'],
+      ['2025-06-01 09:30:00', '转账', '朋友', '零元测试', '支出', '¥0.00', '零钱', '支付成功', 'zero-1', '/', '/'],
     ]);
 
     const parsed = parseWechatBill(workbook);
-    expect(parsed).toHaveLength(2);
+    expect(parsed).toHaveLength(3);
     expect(parsed[0].amount).toBe(6.66);
     expect(parsed[1].category).toBe('商户消费');
+    expect(parsed[2].amount).toBe(0);
+    expect(parsed[2].note).toContain('支付方式: 零钱');
 
     const result = billImportService.importFile(workbook, 'wechat.xlsx', 'wechat');
     expect(result).toMatchObject({
-      success: 2,
+      success: 3,
       skipped: 1,
       duplicates: 0,
       failed: 0,
-      createdCategories: 2,
+      createdCategories: 3,
     });
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        outcome: 'skipped',
+        reason: expect.stringContaining('不属于收入或支出'),
+      }),
+    ]));
 
     const duplicateResult = billImportService.importFile(workbook, 'wechat.xlsx', 'wechat');
-    expect(duplicateResult.duplicates).toBe(2);
+    expect(duplicateResult.duplicates).toBe(3);
     expect(duplicateResult.success).toBe(0);
     expect(db.prepare('SELECT * FROM tags WHERE name = ?').get('微信')).toBeDefined();
+  });
+
+  it('returns Chinese diagnostics for invalid standard import rows without breaking errors', () => {
+    const result = billImportService.importTransactions([
+      {
+        type: 'expense',
+        amount: -1,
+        category: '餐饮',
+        date: '2025-01-01',
+        source: 'standard',
+        import_row: 1,
+        source_raw: { amount: -1, date: '2025-01-01' },
+      },
+      {
+        type: 'income',
+        amount: Number.NaN,
+        category: '',
+        date: '20250102',
+        source: 'standard',
+        import_row: 2,
+        source_raw: { amount: '', date: '20250102' },
+      },
+    ]);
+
+    expect(result).toMatchObject({
+      success: 0,
+      failed: 2,
+      skipped: 0,
+      duplicates: 0,
+    });
+    expect(result.errors).toEqual([
+      'Row 1: 金额不能为负数',
+      'Row 2: 金额无法解析；分类为空；日期格式无效，应为 YYYY-MM-DD',
+    ]);
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({ level: 'error', outcome: 'failed', row: 1, reason: '金额不能为负数' }),
+      expect.objectContaining({ level: 'error', outcome: 'failed', row: 2, reason: '金额无法解析；分类为空；日期格式无效，应为 YYYY-MM-DD' }),
+    ]);
   });
 });
 

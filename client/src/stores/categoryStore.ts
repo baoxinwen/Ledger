@@ -1,3 +1,4 @@
+// 分类 store：提供分类列表缓存和刷新能力。
 import { create } from 'zustand';
 import { categoryApi } from '../api';
 import type { Category } from '../types';

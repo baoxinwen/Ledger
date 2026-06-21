@@ -1,3 +1,4 @@
+// 表单记忆 store：保留用户最近一次录入偏好，减少连续记账时的重复填写。
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 

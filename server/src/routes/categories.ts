@@ -1,3 +1,4 @@
+// 分类路由：管理收入/支出分类，导入账单自动建类时也会复用同一张表。
 import { Router, Request, Response } from 'express';
 import { categoryService } from '../services/category.service';
 

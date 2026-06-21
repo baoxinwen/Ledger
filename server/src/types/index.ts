@@ -1,3 +1,4 @@
+// 后端共享类型集中在这里，路由、服务和测试都通过这些接口保持数据结构一致。
 export interface Transaction {
   id: number;
   type: 'income' | 'expense';
@@ -69,6 +70,21 @@ export interface ImportMetadata {
   source_status?: string;
 }
 
+export interface ImportDiagnostic {
+  level: 'info' | 'warning' | 'error';
+  outcome: 'skipped' | 'duplicate' | 'failed';
+  row?: number;
+  import_row?: number;
+  reason: string;
+  source?: 'standard' | 'alipay' | 'wechat';
+  source_transaction_id?: string;
+  source_merchant_order_id?: string;
+  source_category?: string;
+  source_time?: string;
+  payment_method?: string;
+  raw?: Record<string, unknown>;
+}
+
 export interface ImportableTransaction extends ImportMetadata {
   type: 'income' | 'expense';
   amount: number;
@@ -76,6 +92,10 @@ export interface ImportableTransaction extends ImportMetadata {
   note?: string | null;
   date: string;
   tags?: string[];
+  // 下面三个字段只服务于导入诊断，不会写入 transactions 表。
+  import_row?: number;
+  source_row?: number;
+  source_raw?: Record<string, unknown>;
 }
 
 export interface ImportResult {
@@ -85,4 +105,5 @@ export interface ImportResult {
   duplicates: number;
   createdCategories: number;
   errors: string[];
+  diagnostics: ImportDiagnostic[];
 }

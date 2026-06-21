@@ -1,3 +1,4 @@
+// SQLite 数据库初始化与迁移集中在这里，保证容器重启后仍能复用 data/ledger.db。
 import Database, { Database as DatabaseType } from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';

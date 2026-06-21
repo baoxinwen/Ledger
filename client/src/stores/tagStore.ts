@@ -1,3 +1,4 @@
+// 标签 store：提供标签列表、创建和刷新能力。
 import { create } from 'zustand';
 import { tagApi } from '../api';
 import type { Tag } from '../types';

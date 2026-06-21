@@ -1,3 +1,4 @@
+// 骨架屏组件：页面懒加载或请求中时提供稳定占位，减少布局跳动。
 import { Box, Card, CardContent, Skeleton, Grid } from '@mui/material';
 
 export function DashboardSkeleton() {

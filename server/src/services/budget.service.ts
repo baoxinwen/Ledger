@@ -1,3 +1,4 @@
+// 预算服务负责预算持久化和月度/年度预算执行金额计算。
 import db from '../database';
 import { Budget } from '../types';
 

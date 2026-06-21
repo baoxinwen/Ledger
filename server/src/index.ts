@@ -1,3 +1,4 @@
+// 服务入口：负责初始化数据库、挂载 API 路由，并在生产环境托管前端构建产物。
 import express from 'express';
 import cors from 'cors';
 import path from 'path';

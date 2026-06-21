@@ -1,6 +1,4 @@
-/**
- * Format a number as Chinese Yuan currency
- */
+// 展示层格式化工具：统一金额、日期和百分比的中文显示规则。
 export function formatAmount(amount: number, options?: { minimumFractionDigits?: number; maximumFractionDigits?: number }): string {
   return new Intl.NumberFormat('zh-CN', {
     style: 'currency',
