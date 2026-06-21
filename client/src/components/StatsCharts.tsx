@@ -1,3 +1,4 @@
+// 统计图表组件：封装 Recharts 展示日趋势和分类占比。
 import { Box, Grid, Card, CardContent, Typography, useTheme, useMediaQuery } from '@mui/material';
 import {
   PieChart,

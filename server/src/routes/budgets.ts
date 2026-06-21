@@ -1,3 +1,4 @@
+// 预算路由：负责预算 CRUD 以及预算执行状态查询。
 import { Router, Request, Response } from 'express';
 import { budgetService } from '../services/budget.service';
 

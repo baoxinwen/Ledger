@@ -1,3 +1,4 @@
+// API 客户端集中封装所有后端请求，页面和 store 不直接拼接接口地址。
 import axios from 'axios';
 import type {
   TransactionFilter,

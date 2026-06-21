@@ -1,3 +1,4 @@
+// 交易 store：缓存列表、统计和筛选条件，供首页、记录页、统计页复用。
 import { create } from 'zustand';
 import { transactionApi } from '../api';
 import type { TransactionWithDetails, TransactionFilter, StatsData } from '../types';

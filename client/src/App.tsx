@@ -1,3 +1,4 @@
+// 应用路由层：按页面懒加载业务模块，减少首次打开时的资源体积。
 import { lazy, Suspense, useState } from 'react';
 import { ThemeProvider, CssBaseline } from '@mui/material';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';

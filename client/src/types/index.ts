@@ -1,3 +1,4 @@
+// 前端共享类型需要与后端 API 返回结构保持一致，避免页面和 store 各自猜字段。
 export interface Transaction {
   id: number;
   type: 'income' | 'expense';
@@ -75,6 +76,21 @@ export interface BudgetStatus {
 
 export type ImportFileSource = 'auto' | 'standard' | 'alipay' | 'wechat';
 
+export interface ImportDiagnostic {
+  level: 'info' | 'warning' | 'error';
+  outcome: 'skipped' | 'duplicate' | 'failed';
+  row?: number;
+  import_row?: number;
+  reason: string;
+  source?: 'standard' | 'alipay' | 'wechat';
+  source_transaction_id?: string;
+  source_merchant_order_id?: string;
+  source_category?: string;
+  source_time?: string;
+  payment_method?: string;
+  raw?: Record<string, unknown>;
+}
+
 export interface ImportResult {
   success: number;
   failed: number;
@@ -82,4 +98,5 @@ export interface ImportResult {
   duplicates: number;
   createdCategories: number;
   errors: string[];
+  diagnostics: ImportDiagnostic[];
 }

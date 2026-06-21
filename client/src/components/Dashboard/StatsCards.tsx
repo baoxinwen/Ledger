@@ -1,3 +1,4 @@
+// 统计卡片组件：首页用紧凑卡片展示收入、支出和结余。
 import {
   Typography,
   Box,

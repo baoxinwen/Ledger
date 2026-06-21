@@ -1,3 +1,4 @@
+// 收支记录页：组合筛选器、分页列表和新增/编辑弹窗。
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Box,

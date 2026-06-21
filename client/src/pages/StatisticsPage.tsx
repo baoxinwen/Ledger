@@ -1,3 +1,4 @@
+// 统计页：按时间范围拉取汇总数据并渲染趋势、分类图表。
 import { useEffect, useState } from 'react';
 import {
   Box,

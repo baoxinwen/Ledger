@@ -1,3 +1,4 @@
+// 交易表单：复用在新增和编辑场景，并把常用字段写入表单记忆 store。
 import { useState, useEffect } from 'react';
 import {
   Dialog,

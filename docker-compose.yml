@@ -1,5 +1,6 @@
 services:
   app:
+    # 正式部署使用 GitHub Actions 发布到 GHCR 的镜像；本地只需要 pull 最新镜像即可。
     image: ghcr.io/baoxinwen/ledger:latest
     pull_policy: always
     ports:
@@ -9,4 +10,9 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: unless-stopped

@@ -1,3 +1,4 @@
+// 导入导出组件：展示导入摘要，并把完整诊断信息输出到浏览器控制台。
 import React, { useState } from 'react';
 import {
   Box,
@@ -56,6 +57,7 @@ export default function ImportExportManager({ onImportComplete }: ImportExportMa
       setLastImportResult(null);
       const result = await importExportApi.importFile(file, importSource);
       setLastImportResult(result.data);
+      logImportDiagnostics(file.name, result.data);
       showSnackbar(
         `导入完成: 成功 ${result.data.success} 条, 重复 ${result.data.duplicates} 条, 失败 ${result.data.failed} 条`,
         result.data.failed > 0 ? 'warning' : 'success'
@@ -155,6 +157,23 @@ export default function ImportExportManager({ onImportComplete }: ImportExportMa
                       ))}
                     </Box>
                   )}
+                  {lastImportResult.diagnostics?.length > 0 && (
+                    <Box sx={{ mt: 1.5 }}>
+                      <Typography variant="caption" sx={{ display: 'block', fontWeight: 600, mb: 0.5 }}>
+                        诊断明细（前 {Math.min(lastImportResult.diagnostics.length, 20)} 条，共 {lastImportResult.diagnostics.length} 条）
+                      </Typography>
+                      <Box component="ul" sx={{ pl: 2, my: 0 }}>
+                        {lastImportResult.diagnostics.slice(0, 20).map((diagnostic, index) => (
+                          <li key={`${diagnostic.outcome}-${diagnostic.row ?? index}-${index}`}>
+                            第 {diagnostic.row ?? '-'} 行：
+                            {formatDiagnosticOutcome(diagnostic.outcome)}
+                            {diagnostic.reason}
+                            {diagnostic.source_transaction_id ? `，订单号 ${diagnostic.source_transaction_id}` : ''}
+                          </li>
+                        ))}
+                      </Box>
+                    </Box>
+                  )}
                 </Alert>
               )}
             </CardContent>
@@ -163,4 +182,20 @@ export default function ImportExportManager({ onImportComplete }: ImportExportMa
       </Grid>
     </Box>
   );
+}
+
+function logImportDiagnostics(filename: string, result: ImportResult): void {
+  // 浏览器控制台保留完整诊断，页面只展示前几条，避免长账单把界面撑得太高。
+  console.groupCollapsed(`[账单导入] ${filename}`);
+  console.info('导入汇总', result);
+  if (result.diagnostics?.length) {
+    console.table(result.diagnostics);
+  }
+  console.groupEnd();
+}
+
+function formatDiagnosticOutcome(outcome: ImportResult['diagnostics'][number]['outcome']): string {
+  if (outcome === 'failed') return '失败，';
+  if (outcome === 'duplicate') return '重复，';
+  return '跳过，';
 }

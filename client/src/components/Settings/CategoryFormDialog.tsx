@@ -1,3 +1,4 @@
+// 分类表单弹窗：新增和编辑分类共用，保持字段校验一致。
 import { useState, useEffect } from 'react';
 import {
   Dialog,

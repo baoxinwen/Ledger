@@ -1,3 +1,4 @@
+// 预算服务测试覆盖预算 CRUD 与状态查询的数据库行为。
 import db from '../setup';
 
 describe('BudgetService', () => {

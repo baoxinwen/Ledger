@@ -1,3 +1,4 @@
+// 预算逻辑测试重点保护月度和年度统计范围，避免预算状态跨期计算错误。
 jest.mock('../../database', () => ({
   __esModule: true,
   default: require('../setup').default,

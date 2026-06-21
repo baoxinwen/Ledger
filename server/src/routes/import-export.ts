@@ -1,3 +1,4 @@
+// 导入导出路由：处理文件上传、标准 JSON 导入和账本数据导出。
 import { Router, Request, Response } from 'express';
 import { transactionService } from '../services/transaction.service';
 import { billImportService, FileImportSource } from '../services/billImport.service';
@@ -5,6 +6,7 @@ import { ImportableTransaction } from '../types';
 
 const router = Router();
 
+// 导入导出路由既服务浏览器下载，也承担文件上传入口；这里的日志会直接进入 Docker stdout。
 router.get('/export', (req: Request, res: Response) => {
   const format = (req.query.format as 'json' | 'csv') || 'json';
 
@@ -46,6 +48,7 @@ router.get('/export', (req: Request, res: Response) => {
 });
 
 router.post('/import/file', async (req: Request, res: Response) => {
+  const startedAt = Date.now();
   try {
     const upload = await parseMultipartRequest(req);
     if (!upload.file) {
@@ -53,21 +56,46 @@ router.post('/import/file', async (req: Request, res: Response) => {
     }
 
     const source = normalizeSource(upload.fields.source);
+    logImportEvent('账单文件导入开始', {
+      filename: upload.file.filename,
+      requestedSource: upload.fields.source || 'auto',
+      normalizedSource: source,
+      contentType: upload.file.contentType,
+      size: upload.file.buffer.length,
+    });
     const result = billImportService.importFile(upload.file.buffer, upload.file.filename, source);
+    logImportEvent('账单文件导入完成', {
+      filename: upload.file.filename,
+      source,
+      durationMs: Date.now() - startedAt,
+      result,
+    });
     res.json(result);
   } catch (error) {
+    logImportEvent('账单文件导入失败', {
+      durationMs: Date.now() - startedAt,
+      error: (error as Error).message,
+    }, 'error');
     res.status(400).json({ error: (error as Error).message });
   }
 });
 
 router.post('/import', (req: Request, res: Response) => {
+  const startedAt = Date.now();
   const { transactions } = req.body;
 
   if (!transactions || !Array.isArray(transactions)) {
     return res.status(400).json({ error: 'Invalid import data' });
   }
 
+  logImportEvent('标准交易导入开始', {
+    count: transactions.length,
+  });
   const result = billImportService.importTransactions(transactions as ImportableTransaction[]);
+  logImportEvent('标准交易导入完成', {
+    durationMs: Date.now() - startedAt,
+    result,
+  });
   res.json(result);
 });
 
@@ -153,6 +181,22 @@ function normalizeSource(value: string | undefined): FileImportSource {
     return value;
   }
   return 'auto';
+}
+
+function logImportEvent(message: string, details: Record<string, unknown>, level: 'info' | 'error' = 'info'): void {
+  const payload = {
+    time: new Date().toISOString(),
+    level,
+    scope: 'import',
+    message,
+    ...details,
+  };
+  const line = JSON.stringify(payload);
+  if (level === 'error') {
+    console.error(line);
+  } else {
+    console.log(line);
+  }
 }
 
 export default router;

@@ -1,3 +1,4 @@
+// 交易服务测试覆盖交易 CRUD、筛选、统计和标签同步。
 import db from '../setup';
 
 describe('TransactionService', () => {

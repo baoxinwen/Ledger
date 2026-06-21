@@ -1,6 +1,7 @@
+// 第三方账单导入服务：解析支付宝 CSV、微信 XLSX 和标准 JSON/CSV，并生成可排查的诊断信息。
 import { inflateRawSync } from 'zlib';
 import iconv from 'iconv-lite';
-import { ImportableTransaction, ImportResult } from '../types';
+import { ImportableTransaction, ImportDiagnostic, ImportResult } from '../types';
 import { categoryService } from './category.service';
 import { tagService } from './tag.service';
 import { transactionService } from './transaction.service';
@@ -12,6 +13,8 @@ interface ParsedFile {
   source: ImportSource;
   transactions: ImportableTransaction[];
   skipped: number;
+  failed: number;
+  diagnostics: ImportDiagnostic[];
 }
 
 interface ZipEntry {
@@ -32,21 +35,18 @@ const DEFAULT_CATEGORY = {
 
 export class BillImportService {
   importTransactions(transactions: ImportableTransaction[]): ImportResult {
-    const result: ImportResult = {
-      success: 0,
-      failed: 0,
-      skipped: 0,
-      duplicates: 0,
-      createdCategories: 0,
-      errors: [],
-    };
+    const result = createEmptyImportResult();
     const createdCategoryKeys = new Set<string>();
 
+    // 标准导入和第三方账单最终都会走这条路径，因此这里集中处理校验、去重、建类和入库。
     transactions.forEach((transaction, index) => {
       try {
-        if (!isValidTransaction(transaction)) {
+        const validationErrors = validateTransaction(transaction);
+        if (validationErrors.length > 0) {
+          const reason = validationErrors.join('；');
           result.failed++;
-          result.errors.push(`Row ${index + 1}: Invalid transaction data`);
+          result.errors.push(`Row ${getDiagnosticRow(transaction, index)}: ${reason}`);
+          result.diagnostics.push(createTransactionDiagnostic('error', 'failed', reason, transaction, index));
           return;
         }
 
@@ -56,6 +56,7 @@ export class BillImportService {
           transactionService.existsBySource(transaction.source, transaction.source_transaction_id)
         ) {
           result.duplicates++;
+          result.diagnostics.push(createTransactionDiagnostic('info', 'duplicate', '来源订单号已导入，跳过重复记录', transaction, index));
           return;
         }
 
@@ -63,6 +64,7 @@ export class BillImportService {
         const categoryKey = `${transaction.type}:${categoryName}`;
         let category = categoryService.getByNameAndType(categoryName, transaction.type);
         if (!category) {
+          // 第三方原始分类不做映射，直接按“类型 + 名称”创建自定义分类，避免误归类。
           const defaults = DEFAULT_CATEGORY[transaction.type];
           category = categoryService.create({
             name: categoryName,
@@ -101,10 +103,13 @@ export class BillImportService {
       } catch (error) {
         if (isUniqueConstraintError(error)) {
           result.duplicates++;
+          result.diagnostics.push(createTransactionDiagnostic('info', 'duplicate', '数据库唯一索引判定为重复记录', transaction, index));
           return;
         }
+        const reason = (error as Error).message;
         result.failed++;
-        result.errors.push(`Row ${index + 1}: ${(error as Error).message}`);
+        result.errors.push(`Row ${getDiagnosticRow(transaction, index)}: ${reason}`);
+        result.diagnostics.push(createTransactionDiagnostic('error', 'failed', reason, transaction, index));
       }
     });
 
@@ -114,7 +119,11 @@ export class BillImportService {
   importFile(buffer: Buffer, filename: string, requestedSource: FileImportSource): ImportResult {
     const parsed = parseImportedFile(buffer, filename, requestedSource);
     const result = this.importTransactions(parsed.transactions);
+    // 解析阶段已经能判断不计收支、关闭交易、格式错误等，这些诊断要并入最终响应。
     result.skipped += parsed.skipped;
+    result.failed += parsed.failed;
+    result.errors.push(...parsed.diagnostics.filter((item) => item.outcome === 'failed').map((item) => `Row ${item.row ?? '-'}: ${item.reason}`));
+    result.diagnostics.unshift(...parsed.diagnostics);
     return result;
   }
 }
@@ -123,6 +132,7 @@ export function parseImportedFile(buffer: Buffer, filename: string, requestedSou
   const lowerName = filename.toLowerCase();
   const utf8Text = buffer.toString('utf8');
   const gb18030Text = iconv.decode(buffer, 'gb18030');
+  // 支付宝历史 CSV 常见编码是 GB18030；自动识别时同时检查 UTF-8 和 GB18030 文本。
   const source = detectSource(requestedSource, lowerName, utf8Text, gb18030Text);
 
   if (source === 'alipay') {
@@ -132,10 +142,10 @@ export function parseImportedFile(buffer: Buffer, filename: string, requestedSou
     return { source, ...parseWechatBillWithSkipped(buffer) };
   }
   if (lowerName.endsWith('.json')) {
-    return { source, transactions: parseStandardJson(utf8Text), skipped: 0 };
+    return { source, transactions: parseStandardJson(utf8Text), skipped: 0, failed: 0, diagnostics: [] };
   }
   if (lowerName.endsWith('.csv')) {
-    return { source, transactions: parseStandardCsv(utf8Text), skipped: 0 };
+    return { source, transactions: parseStandardCsv(utf8Text), skipped: 0, failed: 0, diagnostics: [] };
   }
 
   throw new Error('Unsupported import file format');
@@ -145,7 +155,7 @@ export function parseAlipayBill(text: string): ImportableTransaction[] {
   return parseAlipayBillWithSkipped(text).transactions;
 }
 
-function parseAlipayBillWithSkipped(text: string): { transactions: ImportableTransaction[]; skipped: number } {
+function parseAlipayBillWithSkipped(text: string): { transactions: ImportableTransaction[]; skipped: number; failed: number; diagnostics: ImportDiagnostic[] } {
   const rows = parseCsvRows(text);
   const headerIndex = rows.findIndex((row) => row[0]?.trim() === '交易时间');
   if (headerIndex === -1) {
@@ -154,19 +164,25 @@ function parseAlipayBillWithSkipped(text: string): { transactions: ImportableTra
 
   const header = rows[headerIndex];
   let skipped = 0;
+  let failed = 0;
+  const diagnostics: ImportDiagnostic[] = [];
   const transactions = rows.slice(headerIndex + 1).reduce<ImportableTransaction[]>((items, row, index) => {
     if (!row[0]?.trim()) return items;
 
+    const rowNumber = index + headerIndex + 2;
     const record = rowToRecord(header, row);
     const direction = normalizeValue(record['收/支']);
     const status = normalizeValue(record['交易状态']);
 
+    // “不计收支”是支付宝自己的中性流水，不能入账，但要留下诊断说明为什么跳过。
     if (direction !== '收入' && direction !== '支出') {
       skipped++;
+      diagnostics.push(createRawDiagnostic('info', 'skipped', `收/支为“${direction || '空'}”，不属于收入或支出`, 'alipay', rowNumber, record));
       return items;
     }
     if (isClosedOrFailedStatus(status)) {
       skipped++;
+      diagnostics.push(createRawDiagnostic('info', 'skipped', `交易状态为“${status}”，不导入关闭、失败或取消交易`, 'alipay', rowNumber, record));
       return items;
     }
 
@@ -178,16 +194,21 @@ function parseAlipayBillWithSkipped(text: string): { transactions: ImportableTra
     const counterparty = normalizeDisplayValue(record['交易对方']);
     const item = normalizeDisplayValue(record['商品说明']);
     const remark = normalizeDisplayValue(record['备注']);
+    const paymentMethod = normalizeDisplayValue(record['收/付款方式']);
 
-    if (!sourceTime || !Number.isFinite(amount)) {
-      throw new Error(`Invalid Alipay row ${index + headerIndex + 2}`);
+    const parseErrors = validateParsedRow(sourceTime, amount);
+    if (parseErrors.length > 0) {
+      failed++;
+      diagnostics.push(createRawDiagnostic('error', 'failed', parseErrors.join('；'), 'alipay', rowNumber, record));
+      return items;
     }
 
     items.push({
       type: direction === '收入' ? 'income' : 'expense',
       amount,
       category: sourceCategory,
-      note: joinNote([counterparty, item, remark]),
+      // 0 元红包/奖励金抵扣是真实交易事件，但账单没有原价，只能保留 0 元和支付方式。
+      note: joinNote([counterparty, item, remark, zeroAmountPaymentNote(amount, paymentMethod)]),
       date: sourceTime.substring(0, 10),
       tags: [SOURCE_LABELS.alipay],
       source: 'alipay',
@@ -195,21 +216,24 @@ function parseAlipayBillWithSkipped(text: string): { transactions: ImportableTra
       source_merchant_order_id: merchantOrderId || undefined,
       source_category: sourceCategory,
       source_time: sourceTime,
-      payment_method: normalizeDisplayValue(record['收/付款方式']) || undefined,
+      payment_method: paymentMethod || undefined,
       source_status: status || undefined,
+      import_row: items.length + 1,
+      source_row: rowNumber,
+      source_raw: record,
     });
 
     return items;
   }, []);
 
-  return { transactions, skipped };
+  return { transactions, skipped, failed, diagnostics };
 }
 
 export function parseWechatBill(buffer: Buffer): ImportableTransaction[] {
   return parseWechatBillWithSkipped(buffer).transactions;
 }
 
-function parseWechatBillWithSkipped(buffer: Buffer): { transactions: ImportableTransaction[]; skipped: number } {
+function parseWechatBillWithSkipped(buffer: Buffer): { transactions: ImportableTransaction[]; skipped: number; failed: number; diagnostics: ImportDiagnostic[] } {
   const rows = parseFirstWorksheet(buffer);
   const headerIndex = rows.findIndex((row) => row[0]?.trim() === '交易时间');
   if (headerIndex === -1) {
@@ -218,19 +242,25 @@ function parseWechatBillWithSkipped(buffer: Buffer): { transactions: ImportableT
 
   const header = rows[headerIndex];
   let skipped = 0;
+  let failed = 0;
+  const diagnostics: ImportDiagnostic[] = [];
   const transactions = rows.slice(headerIndex + 1).reduce<ImportableTransaction[]>((items, row, index) => {
     if (!row[0]?.trim()) return items;
 
+    const rowNumber = index + headerIndex + 2;
     const record = rowToRecord(header, row);
     const direction = normalizeValue(record['收/支']);
     const status = normalizeValue(record['当前状态']);
 
+    // 微信的充值、提现、零钱通等中性流水没有收入/支出方向，按跳过处理并写诊断。
     if (direction !== '收入' && direction !== '支出') {
       skipped++;
+      diagnostics.push(createRawDiagnostic('info', 'skipped', `收/支为“${direction || '空'}”，不属于收入或支出`, 'wechat', rowNumber, record));
       return items;
     }
     if (isClosedOrFailedStatus(status)) {
       skipped++;
+      diagnostics.push(createRawDiagnostic('info', 'skipped', `当前状态为“${status}”，不导入关闭、失败或取消交易`, 'wechat', rowNumber, record));
       return items;
     }
 
@@ -242,16 +272,21 @@ function parseWechatBillWithSkipped(buffer: Buffer): { transactions: ImportableT
     const counterparty = normalizeDisplayValue(record['交易对方']);
     const item = normalizeDisplayValue(record['商品']);
     const remark = normalizeDisplayValue(record['备注']);
+    const paymentMethod = normalizeDisplayValue(record['支付方式']);
 
-    if (!sourceTime || !Number.isFinite(amount)) {
-      throw new Error(`Invalid WeChat row ${index + headerIndex + 2}`);
+    const parseErrors = validateParsedRow(sourceTime, amount);
+    if (parseErrors.length > 0) {
+      failed++;
+      diagnostics.push(createRawDiagnostic('error', 'failed', parseErrors.join('；'), 'wechat', rowNumber, record));
+      return items;
     }
 
     items.push({
       type: direction === '收入' ? 'income' : 'expense',
       amount,
       category: sourceCategory,
-      note: joinNote([counterparty, item, remark]),
+      // 0 元支付同样保留交易事件，支付方式会帮助解释为什么金额为 0。
+      note: joinNote([counterparty, item, remark, zeroAmountPaymentNote(amount, paymentMethod)]),
       date: sourceTime.substring(0, 10),
       tags: [SOURCE_LABELS.wechat],
       source: 'wechat',
@@ -259,14 +294,17 @@ function parseWechatBillWithSkipped(buffer: Buffer): { transactions: ImportableT
       source_merchant_order_id: merchantOrderId || undefined,
       source_category: sourceCategory,
       source_time: sourceTime,
-      payment_method: normalizeDisplayValue(record['支付方式']) || undefined,
+      payment_method: paymentMethod || undefined,
       source_status: status || undefined,
+      import_row: items.length + 1,
+      source_row: rowNumber,
+      source_raw: record,
     });
 
     return items;
   }, []);
 
-  return { transactions, skipped };
+  return { transactions, skipped, failed, diagnostics };
 }
 
 export function parseStandardJson(text: string): ImportableTransaction[] {
@@ -275,7 +313,7 @@ export function parseStandardJson(text: string): ImportableTransaction[] {
   if (!Array.isArray(transactions)) {
     throw new Error('JSON import must be an array or contain transactions array');
   }
-  return transactions.map(normalizeStandardTransaction);
+  return transactions.map((transaction, index) => normalizeStandardTransaction(transaction, index + 1));
 }
 
 export function parseStandardCsv(text: string): ImportableTransaction[] {
@@ -288,10 +326,11 @@ export function parseStandardCsv(text: string): ImportableTransaction[] {
   const header = rows[headerIndex];
   return rows.slice(headerIndex + 1)
     .filter((row) => row.some((cell) => cell.trim()))
-    .map((row) => normalizeStandardTransaction(rowToRecord(header, row)));
+    .map((row, index) => normalizeStandardTransaction(rowToRecord(header, row), index + 1, index + headerIndex + 2));
 }
 
 export function parseCsvRows(text: string): string[][] {
+  // 自实现 CSV 解析器是为了避免额外依赖，并正确处理支付宝导出中带引号和换行的字段。
   const rows: string[][] = [];
   let row: string[] = [];
   let cell = '';
@@ -351,7 +390,7 @@ function detectSource(
   return 'standard';
 }
 
-function normalizeStandardTransaction(input: Record<string, unknown>): ImportableTransaction {
+function normalizeStandardTransaction(input: Record<string, unknown>, importRow?: number, sourceRow?: number): ImportableTransaction {
   const typeValue = String(input.type ?? input['类型'] ?? '').trim();
   const tagsValue = input.tags ?? input['标签'];
   const tags = Array.isArray(tagsValue)
@@ -360,7 +399,7 @@ function normalizeStandardTransaction(input: Record<string, unknown>): Importabl
 
   return {
     type: typeValue === 'income' || typeValue === '收入' ? 'income' : 'expense',
-    amount: Number(input.amount ?? input['金额']),
+    amount: parseAmount(input.amount ?? input['金额']),
     category: String(input.category ?? input['分类'] ?? '其他').trim(),
     date: String(input.date ?? input['日期'] ?? '').trim(),
     note: String(input.note ?? input['备注'] ?? '').trim() || undefined,
@@ -372,6 +411,9 @@ function normalizeStandardTransaction(input: Record<string, unknown>): Importabl
     source_time: normalizeOptionalString(input.source_time),
     payment_method: normalizeOptionalString(input.payment_method),
     source_status: normalizeOptionalString(input.source_status),
+    import_row: importRow,
+    source_row: sourceRow,
+    source_raw: input,
   };
 }
 
@@ -384,14 +426,111 @@ function normalizeOptionalString(value: unknown): string | undefined {
   return normalized || undefined;
 }
 
-function isValidTransaction(transaction: ImportableTransaction): boolean {
-  return (
-    (transaction.type === 'income' || transaction.type === 'expense') &&
-    Number.isFinite(transaction.amount) &&
-    transaction.amount > 0 &&
-    Boolean(transaction.category?.trim()) &&
-    /^\d{4}-\d{2}-\d{2}$/.test(transaction.date)
-  );
+function createEmptyImportResult(): ImportResult {
+  return {
+    success: 0,
+    failed: 0,
+    skipped: 0,
+    duplicates: 0,
+    createdCategories: 0,
+    errors: [],
+    diagnostics: [],
+  };
+}
+
+function validateParsedRow(sourceTime: string, amount: number): string[] {
+  const errors: string[] = [];
+  if (!sourceTime) errors.push('交易时间为空');
+  if (!Number.isFinite(amount)) errors.push('金额无法解析');
+  if (Number.isFinite(amount) && amount < 0) errors.push('金额不能为负数');
+  return errors;
+}
+
+function validateTransaction(transaction: ImportableTransaction): string[] {
+  const errors: string[] = [];
+  if (transaction.type !== 'income' && transaction.type !== 'expense') {
+    errors.push('类型必须是收入或支出');
+  }
+  if (!Number.isFinite(transaction.amount)) {
+    errors.push('金额无法解析');
+  } else if (transaction.amount < 0) {
+    errors.push('金额不能为负数');
+  }
+  if (!transaction.category?.trim()) {
+    errors.push('分类为空');
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(transaction.date)) {
+    errors.push('日期格式无效，应为 YYYY-MM-DD');
+  }
+  return errors;
+}
+
+function createRawDiagnostic(
+  level: ImportDiagnostic['level'],
+  outcome: ImportDiagnostic['outcome'],
+  reason: string,
+  source: ImportSource,
+  row: number,
+  raw: Record<string, unknown>
+): ImportDiagnostic {
+  // raw 保留完整原始字段；用户明确选择完整诊断日志，所以这里不做脱敏。
+  return {
+    level,
+    outcome,
+    row,
+    reason,
+    source,
+    source_transaction_id: extractRawOrderId(raw, source),
+    source_merchant_order_id: extractRawMerchantOrderId(raw, source),
+    source_category: String(raw[source === 'wechat' ? '交易类型' : '交易分类'] ?? '').trim() || undefined,
+    source_time: String(raw['交易时间'] ?? '').trim() || undefined,
+    payment_method: String(raw[source === 'wechat' ? '支付方式' : '收/付款方式'] ?? '').trim() || undefined,
+    raw,
+  };
+}
+
+function createTransactionDiagnostic(
+  level: ImportDiagnostic['level'],
+  outcome: ImportDiagnostic['outcome'],
+  reason: string,
+  transaction: ImportableTransaction,
+  index: number
+): ImportDiagnostic {
+  return {
+    level,
+    outcome,
+    row: getDiagnosticRow(transaction, index),
+    import_row: transaction.import_row ?? index + 1,
+    reason,
+    source: transaction.source,
+    source_transaction_id: transaction.source_transaction_id,
+    source_merchant_order_id: transaction.source_merchant_order_id,
+    source_category: transaction.source_category,
+    source_time: transaction.source_time,
+    payment_method: transaction.payment_method,
+    raw: transaction.source_raw ?? {
+      type: transaction.type,
+      amount: transaction.amount,
+      category: transaction.category,
+      date: transaction.date,
+      note: transaction.note,
+      tags: transaction.tags,
+    },
+  };
+}
+
+function getDiagnosticRow(transaction: ImportableTransaction, index: number): number {
+  return transaction.source_row ?? transaction.import_row ?? index + 1;
+}
+
+function extractRawOrderId(raw: Record<string, unknown>, source: ImportSource): string | undefined {
+  const key = source === 'wechat' ? '交易单号' : '交易订单号';
+  return normalizeOrderId(raw[key]) || undefined;
+}
+
+function extractRawMerchantOrderId(raw: Record<string, unknown>, source: ImportSource): string | undefined {
+  const key = source === 'wechat' ? '商户单号' : '商家订单号';
+  return normalizeOrderId(raw[key]) || undefined;
 }
 
 function normalizeCategoryName(category: string): string {
@@ -412,13 +551,19 @@ function normalizeOrderId(value: unknown): string {
 }
 
 function parseAmount(value: unknown): number {
+  // 金额字段可能带 ¥、￥、千分位逗号或空白；空字符串必须保持为 NaN，不能误导入为 0。
   const normalized = normalizeValue(value).replace(/[¥￥,\s]/g, '');
+  if (!normalized) return Number.NaN;
   return Number(normalized);
 }
 
 function joinNote(parts: string[]): string | undefined {
   const note = parts.filter(Boolean).join(' - ');
   return note || undefined;
+}
+
+function zeroAmountPaymentNote(amount: number, paymentMethod: string): string {
+  return amount === 0 && paymentMethod ? `支付方式: ${paymentMethod}` : '';
 }
 
 function isClosedOrFailedStatus(status: string): boolean {
