@@ -24,6 +24,7 @@ import type { TransactionWithDetails, TransactionFilter } from '../types';
 import { transactionApi } from '../api';
 import TransactionList from '../components/TransactionList';
 import TransactionForm from '../components/TransactionForm';
+import { PageHeader } from '../components/ui';
 
 export default function TransactionsPage() {
   const { transactions, total, filter, fetchTransactions, setFilter } = useTransactionStore();
@@ -134,37 +135,21 @@ export default function TransactionsPage() {
 
   return (
     <Box>
-      {/* Header */}
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="caption" sx={{ color: 'secondary.main', mb: 1, display: 'block' }}>
-          财务记录
-        </Typography>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-          <Box>
-            <Typography
-              variant="h3"
-              sx={{
-                fontFamily: '"Playfair Display", serif',
-                fontWeight: 700,
-                mb: 0.5,
-                fontSize: { xs: '2rem', md: '2.5rem' },
-              }}
-            >
-              收支记录
-            </Typography>
-            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-              共 {total} 条记录
-            </Typography>
-          </Box>
+      <PageHeader
+        eyebrow="财务记录"
+        title="收支记录"
+        meta={`共 ${total} 条记录`}
+        action={(
           <Button
             variant="contained"
             startIcon={<AddIcon />}
             onClick={() => setFormOpen(true)}
+            fullWidth
           >
             新增记录
           </Button>
-        </Box>
-      </Box>
+        )}
+      />
 
       <Grid container spacing={3}>
         {/* Left Sidebar - Filters */}

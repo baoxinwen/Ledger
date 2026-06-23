@@ -8,6 +8,7 @@ import type {
   StatsData,
   Budget,
   BudgetStatus,
+  AppSettings,
   ImportFileSource,
   ImportResult,
 } from '../types';
@@ -62,6 +63,13 @@ export const budgetApi = {
     api.put<Budget>(`/budgets/${id}`, data),
   delete: (id: number) =>
     api.delete(`/budgets/${id}`),
+};
+
+export const settingsApi = {
+  get: () =>
+    api.get<AppSettings>('/settings'),
+  update: (data: Partial<AppSettings>) =>
+    api.put<AppSettings>('/settings', data),
 };
 
 export const importExportApi = {

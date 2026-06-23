@@ -74,6 +74,13 @@ export interface BudgetStatus {
   remaining: number;
 }
 
+export type ThemeMode = 'system' | 'light' | 'dark';
+
+export interface AppSettings {
+  time_zone: string;
+  theme_mode: ThemeMode;
+}
+
 export type ImportFileSource = 'auto' | 'standard' | 'alipay' | 'wechat';
 
 export interface ImportDiagnostic {

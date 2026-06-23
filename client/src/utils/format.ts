@@ -1,4 +1,6 @@
-// 展示层格式化工具：统一金额、日期和百分比的中文显示规则。
+// 展示层格式化工具：统一金额、日期、百分比和业务时区下的日期范围。
+export const DEFAULT_TIME_ZONE = 'Asia/Shanghai';
+
 export function formatAmount(amount: number, options?: { minimumFractionDigits?: number; maximumFractionDigits?: number }): string {
   return new Intl.NumberFormat('zh-CN', {
     style: 'currency',
@@ -18,7 +20,12 @@ export function formatCompactAmount(amount: number): string {
 /**
  * Format a date string to localized format
  */
-export function formatDate(dateStr: string): string {
+export function formatDate(dateStr: string, timeZone: string = DEFAULT_TIME_ZONE): string {
+  const plainDate = parsePlainDate(dateStr);
+  if (plainDate) {
+    return `${plainDate.year}/${pad2(plainDate.month)}/${pad2(plainDate.day)}`;
+  }
+
   const date = new Date(dateStr);
   if (isNaN(date.getTime())) {
     return '—';
@@ -27,21 +34,106 @@ export function formatDate(dateStr: string): string {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
+    timeZone: normalizeTimeZone(timeZone),
   });
 }
 
 /**
  * Get current month date range
  */
-export function getCurrentMonthRange(): { startDate: string; endDate: string } {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const lastDay = String(new Date(year, now.getMonth() + 1, 0).getDate()).padStart(2, '0');
+export function getCurrentMonthRange(timeZone: string = DEFAULT_TIME_ZONE, referenceDate: Date = new Date()): { startDate: string; endDate: string } {
+  const { year, month } = getZonedDateParts(referenceDate, timeZone);
+  return getMonthRangeForMonth(`${year}-${pad2(month)}`);
+}
+
+export function getCurrentMonth(timeZone: string = DEFAULT_TIME_ZONE, referenceDate: Date = new Date()): string {
+  const { year, month } = getZonedDateParts(referenceDate, timeZone);
+  return `${year}-${pad2(month)}`;
+}
+
+export function getTodayInTimeZone(timeZone: string = DEFAULT_TIME_ZONE, referenceDate: Date = new Date()): string {
+  const { year, month, day } = getZonedDateParts(referenceDate, timeZone);
+  return `${year}-${pad2(month)}-${pad2(day)}`;
+}
+
+export function getMonthRangeForMonth(month: string): { startDate: string; endDate: string } {
+  const [year, monthPart] = month.split('-').map(Number);
+  const lastDay = getLastDayOfMonth(year, monthPart);
   return {
-    startDate: `${year}-${month}-01`,
-    endDate: `${year}-${month}-${lastDay}`,
+    startDate: `${month}-01`,
+    endDate: `${month}-${pad2(lastDay)}`,
   };
+}
+
+export function getMonthRangeForDate(date: string): { startDate: string; endDate: string } {
+  return getMonthRangeForMonth(date.substring(0, 7));
+}
+
+export function getQuarterRangeForDate(date: string): { startDate: string; endDate: string } {
+  const parsedDate = parsePlainDate(date);
+  if (!parsedDate) return getCurrentMonthRange();
+
+  const quarterStartMonth = Math.floor((parsedDate.month - 1) / 3) * 3 + 1;
+  const quarterEndMonth = quarterStartMonth + 2;
+  const endDay = getLastDayOfMonth(parsedDate.year, quarterEndMonth);
+
+  return {
+    startDate: `${parsedDate.year}-${pad2(quarterStartMonth)}-01`,
+    endDate: `${parsedDate.year}-${pad2(quarterEndMonth)}-${pad2(endDay)}`,
+  };
+}
+
+export function getYearRangeForDate(date: string): { startDate: string; endDate: string } {
+  const parsedDate = parsePlainDate(date);
+  const year = parsedDate?.year ?? getZonedDateParts(new Date(), DEFAULT_TIME_ZONE).year;
+  return {
+    startDate: `${year}-01-01`,
+    endDate: `${year}-12-31`,
+  };
+}
+
+export function formatYearMonth(month: string): string {
+  const [year, monthPart] = month.split('-');
+  return `${year}年${Number(monthPart)}月`;
+}
+
+export function isValidTimeZone(timeZone: string): boolean {
+  if (!timeZone) return false;
+
+  try {
+    new Intl.DateTimeFormat('zh-CN', { timeZone }).format(new Date());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function normalizeTimeZone(timeZone?: string | null): string {
+  return timeZone && isValidTimeZone(timeZone) ? timeZone : DEFAULT_TIME_ZONE;
+}
+
+export function getSupportedTimeZones(): string[] {
+  const preferredTimeZones = [
+    'Asia/Shanghai',
+    'Asia/Hong_Kong',
+    'Asia/Taipei',
+    'Asia/Tokyo',
+    'Asia/Singapore',
+    'Europe/London',
+    'Europe/Paris',
+    'America/New_York',
+    'America/Los_Angeles',
+    'UTC',
+  ];
+  const intlWithTimeZones = Intl as typeof Intl & {
+    supportedValuesOf?: (key: 'timeZone') => string[];
+  };
+  const supportedTimeZones = intlWithTimeZones.supportedValuesOf?.('timeZone') ?? [];
+
+  return [
+    ...preferredTimeZones,
+    ...supportedTimeZones.filter((timeZone) => !preferredTimeZones.includes(timeZone)),
+  ];
 }
 
 /**
@@ -50,4 +142,38 @@ export function getCurrentMonthRange(): { startDate: string; endDate: string } {
 export function calculatePercentage(value: number, total: number, max: number = 100): number {
   if (total === 0) return 0;
   return Math.min((value / total) * 100, max);
+}
+
+function getZonedDateParts(date: Date, timeZone: string): { year: number; month: number; day: number } {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: normalizeTimeZone(timeZone),
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = formatter.formatToParts(date);
+  const year = Number(parts.find((part) => part.type === 'year')?.value);
+  const month = Number(parts.find((part) => part.type === 'month')?.value);
+  const day = Number(parts.find((part) => part.type === 'day')?.value);
+
+  return { year, month, day };
+}
+
+function parsePlainDate(dateStr: string): { year: number; month: number; day: number } | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  if (!match) return null;
+
+  return {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+  };
+}
+
+function getLastDayOfMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, '0');
 }

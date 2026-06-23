@@ -81,7 +81,7 @@ export class BudgetService {
 
 function getMonthRange(month: string): { startDate: string; endDate: string } {
   const [year, monthPart] = month.split('-').map(Number);
-  const lastDay = new Date(year, monthPart, 0).getDate();
+  const lastDay = new Date(Date.UTC(year, monthPart, 0)).getUTCDate();
   return {
     startDate: `${month}-01`,
     endDate: `${month}-${String(lastDay).padStart(2, '0')}`,

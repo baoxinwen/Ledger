@@ -29,6 +29,7 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV TZ=Asia/Shanghai
 
 COPY server/package*.json ./server/
 COPY --from=build /app/server/node_modules ./server/node_modules

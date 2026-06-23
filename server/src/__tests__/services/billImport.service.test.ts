@@ -7,6 +7,7 @@ jest.mock('../../database', () => ({
 import db from '../setup';
 import iconv from 'iconv-lite';
 import { billImportService, parseAlipayBill, parseWechatBill } from '../../services/billImport.service';
+import { EDITORIAL_CATEGORY_PALETTE } from '../../utils/categoryColor';
 
 describe('BillImportService', () => {
   beforeEach(() => {
@@ -85,6 +86,11 @@ describe('BillImportService', () => {
     expect(zeroAmount.amount).toBe(0);
     expect(zeroAmount.note).toContain('支付方式: 余额');
     expect(db.prepare('SELECT * FROM categories WHERE name = ? AND type = ?').get('餐饮美食', 'expense')).toBeDefined();
+    const expenseCategoryColors = db.prepare('SELECT color FROM categories WHERE type = ? ORDER BY name').all('expense') as { color: string }[];
+    expect(new Set(expenseCategoryColors.map((category) => category.color)).size).toBe(expenseCategoryColors.length);
+    expenseCategoryColors.forEach((category) => {
+      expect(EDITORIAL_CATEGORY_PALETTE).toContain(category.color);
+    });
     expect(db.prepare('SELECT * FROM tags WHERE name = ?').get('支付宝')).toBeDefined();
   });
 

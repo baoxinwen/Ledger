@@ -58,6 +58,12 @@ db.exec(`
     FOREIGN KEY (category_id) REFERENCES categories(id)
   );
 
+  CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+
   CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_source_unique
     ON transactions(source, source_transaction_id)
     WHERE source IS NOT NULL AND source_transaction_id IS NOT NULL;

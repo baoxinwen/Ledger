@@ -40,6 +40,11 @@ export interface Budget {
   start_date: string;
 }
 
+export interface AppSettings {
+  time_zone: string;
+  theme_mode: 'system' | 'light' | 'dark';
+}
+
 export interface TransactionWithDetails extends Transaction {
   category: Category;
   tags: Tag[];

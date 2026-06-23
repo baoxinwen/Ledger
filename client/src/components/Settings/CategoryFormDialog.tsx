@@ -11,46 +11,52 @@ import {
   MenuItem,
 } from '@mui/material';
 import type { Category } from '../../types';
+import { suggestCategoryFormColor } from '../../utils/categoryColor';
 
 interface CategoryFormDialogProps {
   open: boolean;
   category: Category | null;
+  categories: Category[];
   onClose: () => void;
   onSubmit: (data: { name: string; type: 'income' | 'expense'; icon?: string; color?: string }) => Promise<void>;
 }
 
-export default function CategoryFormDialog({ open, category, onClose, onSubmit }: CategoryFormDialogProps) {
+export default function CategoryFormDialog({ open, category, categories, onClose, onSubmit }: CategoryFormDialogProps) {
   const [form, setForm] = useState({
     name: '',
     type: 'expense' as 'income' | 'expense',
     icon: '',
-    color: '#1976d2',
+    color: '#5F6F52',
   });
   const [submitting, setSubmitting] = useState(false);
+  const [colorTouched, setColorTouched] = useState(false);
 
   useEffect(() => {
+    setColorTouched(false);
     if (category) {
       setForm({
         name: category.name,
         type: category.type,
         icon: category.icon || '',
-        color: category.color || '#1976d2',
+        color: category.color || suggestCategoryFormColor(category.type, category.name, categories),
       });
     } else {
+      const type = 'expense';
       setForm({
         name: '',
-        type: 'expense',
+        type,
         icon: '',
-        color: '#1976d2',
+        color: suggestCategoryFormColor(type, '', categories),
       });
     }
-  }, [category?.id]);
+  }, [category?.id, categories, open]);
 
   const handleSubmit = async () => {
     setSubmitting(true);
     try {
       await onSubmit(form);
-      setForm({ name: '', type: 'expense', icon: '', color: '#1976d2' });
+      setForm({ name: '', type: 'expense', icon: '', color: suggestCategoryFormColor('expense', '', categories) });
+      setColorTouched(false);
     } catch (err) {
       console.error('Failed to submit category:', err);
     } finally {
@@ -66,7 +72,14 @@ export default function CategoryFormDialog({ open, category, onClose, onSubmit }
           <TextField
             label="分类名称"
             value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            onChange={(e) => {
+              const name = e.target.value;
+              setForm({
+                ...form,
+                name,
+                color: category || colorTouched ? form.color : suggestCategoryFormColor(form.type, name, categories),
+              });
+            }}
             required
             fullWidth
           />
@@ -76,7 +89,14 @@ export default function CategoryFormDialog({ open, category, onClose, onSubmit }
               select
               label="类型"
               value={form.type}
-              onChange={(e) => setForm({ ...form, type: e.target.value as 'income' | 'expense' })}
+              onChange={(e) => {
+                const type = e.target.value as 'income' | 'expense';
+                setForm({
+                  ...form,
+                  type,
+                  color: colorTouched ? form.color : suggestCategoryFormColor(type, form.name, categories),
+                });
+              }}
               fullWidth
             >
               <MenuItem value="expense">支出</MenuItem>
@@ -95,7 +115,10 @@ export default function CategoryFormDialog({ open, category, onClose, onSubmit }
             label="颜色"
             type="color"
             value={form.color}
-            onChange={(e) => setForm({ ...form, color: e.target.value })}
+            onChange={(e) => {
+              setColorTouched(true);
+              setForm({ ...form, color: e.target.value });
+            }}
             fullWidth
           />
         </Box>
