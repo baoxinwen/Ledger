@@ -9,22 +9,22 @@ const commonTypography = {
   h1: {
     fontFamily: '"Playfair Display", Georgia, serif',
     fontWeight: 700,
-    letterSpacing: '-0.02em',
+    letterSpacing: 0,
   },
   h2: {
     fontFamily: '"Playfair Display", Georgia, serif',
     fontWeight: 700,
-    letterSpacing: '-0.02em',
+    letterSpacing: 0,
   },
   h3: {
     fontFamily: '"Playfair Display", Georgia, serif',
     fontWeight: 700,
-    letterSpacing: '-0.01em',
+    letterSpacing: 0,
   },
   h4: {
     fontFamily: '"Playfair Display", Georgia, serif',
     fontWeight: 600,
-    letterSpacing: '-0.01em',
+    letterSpacing: 0,
   },
   h5: {
     fontFamily: '"DM Sans", sans-serif',
@@ -136,8 +136,13 @@ export const lightTheme = createTheme({
       styleOverrides: {
         root: {
           borderRadius: 2,
-          padding: '10px 24px',
+          minHeight: 40,
+          padding: '9px 20px',
           fontWeight: 600,
+          boxShadow: 'none',
+          '&:hover': {
+            boxShadow: 'none',
+          },
           '&.MuiButton-contained': {
             backgroundColor: '#1a1a2e',
             color: '#faf9f7',
@@ -152,6 +157,49 @@ export const lightTheme = createTheme({
               backgroundColor: '#1a1a2e',
               color: '#faf9f7',
             },
+          },
+        },
+      },
+    },
+    MuiIconButton: {
+      styleOverrides: {
+        root: {
+          borderRadius: 2,
+          '&:focus-visible': {
+            outline: '2px solid #c9a84c',
+            outlineOffset: 2,
+          },
+        },
+      },
+    },
+    MuiToggleButtonGroup: {
+      styleOverrides: {
+        root: {
+          border: '1px solid #e5e2db',
+          borderRadius: 2,
+          overflow: 'hidden',
+        },
+      },
+    },
+    MuiToggleButton: {
+      styleOverrides: {
+        root: {
+          minHeight: 38,
+          border: 0,
+          borderRadius: 0,
+          padding: '8px 14px',
+          color: '#6b7280',
+          fontWeight: 600,
+          '&.Mui-selected': {
+            backgroundColor: '#1a1a2e',
+            color: '#faf9f7',
+            '&:hover': {
+              backgroundColor: '#16213e',
+            },
+          },
+          '&:focus-visible': {
+            outline: '2px solid #c9a84c',
+            outlineOffset: -2,
           },
         },
       },
@@ -207,6 +255,23 @@ export const lightTheme = createTheme({
           borderRadius: 2,
           border: '1px solid #e5e2db',
           boxShadow: '0 24px 48px rgba(26, 26, 46, 0.12)',
+        },
+      },
+    },
+    MuiDialogTitle: {
+      styleOverrides: {
+        root: {
+          fontFamily: '"Playfair Display", Georgia, serif',
+          fontWeight: 700,
+        },
+      },
+    },
+    MuiAlert: {
+      styleOverrides: {
+        root: {
+          borderRadius: 2,
+          border: '1px solid #e5e2db',
+          backgroundImage: 'none',
         },
       },
     },
@@ -319,8 +384,13 @@ export const darkTheme = createTheme({
       styleOverrides: {
         root: {
           borderRadius: 2,
-          padding: '10px 24px',
+          minHeight: 40,
+          padding: '9px 20px',
           fontWeight: 600,
+          boxShadow: 'none',
+          '&:hover': {
+            boxShadow: 'none',
+          },
           '&.MuiButton-contained': {
             backgroundColor: '#c9a84c',
             color: '#0a0a0f',
@@ -335,6 +405,49 @@ export const darkTheme = createTheme({
               backgroundColor: '#c9a84c',
               color: '#0a0a0f',
             },
+          },
+        },
+      },
+    },
+    MuiIconButton: {
+      styleOverrides: {
+        root: {
+          borderRadius: 2,
+          '&:focus-visible': {
+            outline: '2px solid #c9a84c',
+            outlineOffset: 2,
+          },
+        },
+      },
+    },
+    MuiToggleButtonGroup: {
+      styleOverrides: {
+        root: {
+          border: '1px solid #1f1f2e',
+          borderRadius: 2,
+          overflow: 'hidden',
+        },
+      },
+    },
+    MuiToggleButton: {
+      styleOverrides: {
+        root: {
+          minHeight: 38,
+          border: 0,
+          borderRadius: 0,
+          padding: '8px 14px',
+          color: '#9ca3af',
+          fontWeight: 600,
+          '&.Mui-selected': {
+            backgroundColor: '#c9a84c',
+            color: '#0a0a0f',
+            '&:hover': {
+              backgroundColor: '#d4b96e',
+            },
+          },
+          '&:focus-visible': {
+            outline: '2px solid #c9a84c',
+            outlineOffset: -2,
           },
         },
       },
@@ -393,6 +506,23 @@ export const darkTheme = createTheme({
           boxShadow: '0 24px 48px rgba(0, 0, 0, 0.4)',
           backgroundImage: 'none',
           backgroundColor: '#12121a',
+        },
+      },
+    },
+    MuiDialogTitle: {
+      styleOverrides: {
+        root: {
+          fontFamily: '"Playfair Display", Georgia, serif',
+          fontWeight: 700,
+        },
+      },
+    },
+    MuiAlert: {
+      styleOverrides: {
+        root: {
+          borderRadius: 2,
+          border: '1px solid #1f1f2e',
+          backgroundImage: 'none',
         },
       },
     },

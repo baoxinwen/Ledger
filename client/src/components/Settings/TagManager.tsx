@@ -2,12 +2,12 @@
 import { useState } from 'react';
 import {
   Box,
-  Typography,
   TextField,
   Button,
   Chip,
 } from '@mui/material';
 import type { Tag } from '../../types';
+import { EmptyState, SectionCard } from '../ui';
 
 interface TagManagerProps {
   tags: Tag[];
@@ -25,38 +25,59 @@ export default function TagManager({ tags, onCreate, onDelete }: TagManagerProps
   };
 
   return (
-    <Box>
-      <Typography variant="h5" gutterBottom>标签管理</Typography>
-
-      <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+    <SectionCard title="标签管理" subtitle={`${tags.length} 个标签`}>
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', sm: 'minmax(240px, 360px) max-content' },
+          alignItems: 'center',
+          gap: 1.5,
+          mb: 3,
+        }}
+      >
         <TextField
+          data-testid="tag-name-field"
           label="新标签名称"
           value={newTagName}
           onChange={(e) => setNewTagName(e.target.value)}
           size="small"
+          fullWidth
+          sx={{
+            '& .MuiInputBase-root': { height: 40 },
+          }}
         />
-        <Button variant="contained" onClick={handleCreate} disabled={!newTagName.trim()}>
+        <Button
+          variant="contained"
+          onClick={handleCreate}
+          disabled={!newTagName.trim()}
+          sx={{ height: 40, minWidth: 112, justifySelf: { xs: 'stretch', sm: 'start' } }}
+        >
           添加标签
         </Button>
       </Box>
 
-      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-        {tags.map((tag) => (
-          <Chip
-            key={tag.id}
-            label={tag.name}
-            onDelete={async () => {
-              if (window.confirm('确定要删除这个标签吗？')) {
-                try {
-                  await onDelete(tag.id);
-                } catch (error) {
-                  console.error('Failed to delete tag:', error);
+      {tags.length > 0 ? (
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+          {tags.map((tag) => (
+            <Chip
+              key={tag.id}
+              label={tag.name}
+              sx={{ height: 30 }}
+              onDelete={async () => {
+                if (window.confirm('确定要删除这个标签吗？')) {
+                  try {
+                    await onDelete(tag.id);
+                  } catch (error) {
+                    console.error('Failed to delete tag:', error);
+                  }
                 }
-              }
-            }}
-          />
-        ))}
-      </Box>
-    </Box>
+              }}
+            />
+          ))}
+        </Box>
+      ) : (
+        <EmptyState title="暂无标签" description="导入来源标签和手动标签会显示在这里" />
+      )}
+    </SectionCard>
   );
 }

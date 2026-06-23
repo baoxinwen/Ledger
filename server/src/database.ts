@@ -2,6 +2,9 @@
 import Database, { Database as DatabaseType } from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import { repairCategoryColors } from './utils/categoryColor';
+import { getDefaultAppTimeZone } from './utils/timeZone';
+import { getDefaultThemeMode } from './utils/themeMode';
 
 const dataDir = path.join(__dirname, '..', 'data');
 if (!fs.existsSync(dataDir)) {
@@ -67,13 +70,21 @@ export function initDatabase(): void {
       FOREIGN KEY (category_id) REFERENCES categories(id)
     );
 
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
     CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type);
     CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id);
   `);
 
   migrateTransactionImportColumns();
+  seedAppSettings();
   seedCategories();
+  repairStoredCategoryColors();
 }
 
 function migrateTransactionImportColumns(): void {
@@ -103,28 +114,35 @@ function migrateTransactionImportColumns(): void {
   `);
 }
 
+function seedAppSettings(): void {
+  const insert = db.prepare('INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)');
+  // TZ 只作为业务时区首次初始化默认值；用户之后在设置页保存的值不会被重启覆盖。
+  insert.run('time_zone', getDefaultAppTimeZone());
+  insert.run('theme_mode', getDefaultThemeMode());
+}
+
 function seedCategories(): void {
   const count = db.prepare('SELECT COUNT(*) as count FROM categories').get() as { count: number };
   if (count.count > 0) return;
 
   const expenseCategories = [
-    { name: '餐饮', icon: '🍽️', color: '#FF6B6B' },
-    { name: '交通', icon: '🚗', color: '#4ECDC4' },
-    { name: '购物', icon: '🛒', color: '#45B7D1' },
-    { name: '娱乐', icon: '🎮', color: '#96CEB4' },
-    { name: '居住', icon: '🏠', color: '#FFEAA7' },
-    { name: '医疗', icon: '💊', color: '#DDA0DD' },
-    { name: '教育', icon: '📚', color: '#98D8C8' },
-    { name: '通讯', icon: '📱', color: '#F7DC6F' },
-    { name: '其他', icon: '📦', color: '#BDC3C7' },
+    { name: '餐饮', icon: '🍽️', color: '#8A5A61' },
+    { name: '交通', icon: '🚗', color: '#5D737E' },
+    { name: '购物', icon: '🛒', color: '#6B7A8F' },
+    { name: '娱乐', icon: '🎮', color: '#6D597A' },
+    { name: '居住', icon: '🏠', color: '#9A7B4F' },
+    { name: '医疗', icon: '💊', color: '#7F5F72' },
+    { name: '教育', icon: '📚', color: '#4F5D75' },
+    { name: '通讯', icon: '📱', color: '#4F6F6B' },
+    { name: '其他', icon: '📦', color: '#6E6658' },
   ];
 
   const incomeCategories = [
-    { name: '工资', icon: '💰', color: '#2ECC71' },
-    { name: '奖金', icon: '🎁', color: '#27AE60' },
-    { name: '投资', icon: '📈', color: '#16A085' },
-    { name: '兼职', icon: '💼', color: '#1ABC9C' },
-    { name: '其他', icon: '📦', color: '#95A5A6' },
+    { name: '工资', icon: '💰', color: '#5F6F52' },
+    { name: '奖金', icon: '🎁', color: '#7A8450' },
+    { name: '投资', icon: '📈', color: '#466A66' },
+    { name: '兼职', icon: '💼', color: '#536271' },
+    { name: '其他', icon: '📦', color: '#6E6658' },
   ];
 
   const insert = db.prepare(
@@ -139,6 +157,23 @@ function seedCategories(): void {
 
   insertMany(expenseCategories, 'expense');
   insertMany(incomeCategories, 'income');
+}
+
+function repairStoredCategoryColors(): void {
+  const categories = db.prepare(`
+    SELECT id, name, type, color, is_preset
+    FROM categories
+    ORDER BY type, is_preset DESC, sort_order, id
+  `).all() as { id: number; name: string; type: 'income' | 'expense'; color: string | null; is_preset: number }[];
+
+  const updates = repairCategoryColors(categories);
+  if (updates.size === 0) return;
+
+  const updateColor = db.prepare('UPDATE categories SET color = ? WHERE id = ?');
+  const updateMany = db.transaction((items: [number, string][]) => {
+    items.forEach(([id, color]) => updateColor.run(color, id));
+  });
+  updateMany([...updates.entries()]);
 }
 
 export default db;

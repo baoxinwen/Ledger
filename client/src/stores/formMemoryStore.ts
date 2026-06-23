@@ -1,6 +1,7 @@
 // 表单记忆 store：保留用户最近一次录入偏好，减少连续记账时的重复填写。
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { DEFAULT_TIME_ZONE, getTodayInTimeZone } from '../utils/format';
 
 interface TransactionFormData {
   type: 'income' | 'expense';
@@ -11,13 +12,13 @@ interface TransactionFormData {
 interface FormMemoryState {
   transactionForm: TransactionFormData;
   setTransactionForm: (data: Partial<TransactionFormData>) => void;
-  resetTransactionForm: () => void;
+  resetTransactionForm: (defaultDate?: string) => void;
 }
 
 const defaultFormData: TransactionFormData = {
   type: 'expense',
   category_id: null,
-  date: new Date().toISOString().split('T')[0],
+  date: getTodayInTimeZone(DEFAULT_TIME_ZONE),
 };
 
 export const useFormMemoryStore = create<FormMemoryState>()(
@@ -31,8 +32,8 @@ export const useFormMemoryStore = create<FormMemoryState>()(
         }));
       },
 
-      resetTransactionForm: () => {
-        set({ transactionForm: { ...defaultFormData, date: new Date().toISOString().split('T')[0] } });
+      resetTransactionForm: (defaultDate?: string) => {
+        set({ transactionForm: { ...defaultFormData, date: defaultDate || getTodayInTimeZone(DEFAULT_TIME_ZONE) } });
       },
     }),
     {

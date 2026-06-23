@@ -6,14 +6,16 @@ import {
   ToggleButton,
   ToggleButtonGroup,
   TextField,
-  Card,
-  CardContent,
   useTheme,
   useMediaQuery,
 } from '@mui/material';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useSnackbarStore } from '../stores/snackbarStore';
+import { useSettingsStore } from '../stores/settingsStore';
+import { useZonedToday } from '../hooks/useZonedToday';
 import StatsCharts from '../components/StatsCharts';
+import { getMonthRangeForDate, getQuarterRangeForDate, getYearRangeForDate } from '../utils/format';
+import { PageHeader, SectionCard } from '../components/ui';
 
 export default function StatisticsPage() {
   const { stats, loading, fetchStats } = useTransactionStore();
@@ -23,27 +25,32 @@ export default function StatisticsPage() {
   const [endDate, setEndDate] = useState('');
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const timeZone = useSettingsStore((state) => state.settings.time_zone);
+  const today = useZonedToday(timeZone);
 
   useEffect(() => {
-    const now = new Date();
     let start = '';
     let end = '';
 
     switch (period) {
-      case 'month':
-        start = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-        end = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()}`;
-        break;
-      case 'quarter': {
-        const quarter = Math.floor(now.getMonth() / 3);
-        start = `${now.getFullYear()}-${String(quarter * 3 + 1).padStart(2, '0')}-01`;
-        end = `${now.getFullYear()}-${String((quarter + 1) * 3).padStart(2, '0')}-${new Date(now.getFullYear(), (quarter + 1) * 3, 0).getDate()}`;
+      case 'month': {
+        const range = getMonthRangeForDate(today);
+        start = range.startDate;
+        end = range.endDate;
         break;
       }
-      case 'year':
-        start = `${now.getFullYear()}-01-01`;
-        end = `${now.getFullYear()}-12-31`;
+      case 'quarter': {
+        const range = getQuarterRangeForDate(today);
+        start = range.startDate;
+        end = range.endDate;
         break;
+      }
+      case 'year': {
+        const range = getYearRangeForDate(today);
+        start = range.startDate;
+        end = range.endDate;
+        break;
+      }
       case 'custom':
         start = startDate;
         end = endDate;
@@ -55,34 +62,18 @@ export default function StatisticsPage() {
         showSnackbar('加载统计数据失败', 'error');
       });
     }
-  }, [period, startDate, endDate, fetchStats]);
+  }, [period, startDate, endDate, today, fetchStats, showSnackbar]);
 
   return (
     <Box>
-      {/* Header */}
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="caption" sx={{ color: 'secondary.main', mb: 1, display: 'block' }}>
-          数据分析
-        </Typography>
-        <Typography
-          variant="h3"
-          sx={{
-            fontFamily: '"Playfair Display", serif',
-            fontWeight: 700,
-            mb: 1,
-            fontSize: { xs: '2rem', md: '2.5rem' },
-          }}
-        >
-          统计分析
-        </Typography>
-        <Typography variant="body1" sx={{ color: 'text.secondary' }}>
-          查看您的收支趋势和分类统计
-        </Typography>
-      </Box>
+      <PageHeader
+        eyebrow="数据分析"
+        title="统计分析"
+        description="查看您的收支趋势和分类统计"
+      />
 
       {/* Time Period Selector */}
-      <Card sx={{ mb: 4 }}>
-        <CardContent>
+      <SectionCard cardSx={{ mb: 4 }}>
           <Box sx={{
             display: 'flex',
             flexDirection: isMobile ? 'column' : 'row',
@@ -129,32 +120,27 @@ export default function StatisticsPage() {
               </Box>
             )}
           </Box>
-        </CardContent>
-      </Card>
+      </SectionCard>
 
       {/* Charts */}
       {stats ? (
         <StatsCharts stats={stats} />
       ) : loading ? (
-        <Card>
-          <CardContent>
+        <SectionCard>
             <Box sx={{ textAlign: 'center', py: 8 }}>
               <Typography variant="body1" sx={{ color: 'text.secondary' }}>
                 加载中...
               </Typography>
             </Box>
-          </CardContent>
-        </Card>
+        </SectionCard>
       ) : (
-        <Card>
-          <CardContent>
+        <SectionCard>
             <Box sx={{ textAlign: 'center', py: 8 }}>
               <Typography variant="body1" sx={{ color: 'error.main' }}>
                 加载失败，请重试
               </Typography>
             </Box>
-          </CardContent>
-        </Card>
+        </SectionCard>
       )}
     </Box>
   );

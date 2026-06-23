@@ -16,6 +16,8 @@ import {
 } from '@mui/material';
 import type { TransactionWithDetails, Category, Tag } from '../types';
 import { useFormMemoryStore } from '../stores/formMemoryStore';
+import { useSettingsStore } from '../stores/settingsStore';
+import { useZonedToday } from '../hooks/useZonedToday';
 
 interface TransactionFormProps {
   open: boolean;
@@ -37,11 +39,13 @@ export default function TransactionForm({
   onCreateTag,
 }: TransactionFormProps) {
   const { transactionForm, setTransactionForm } = useFormMemoryStore();
+  const timeZone = useSettingsStore((state) => state.settings.time_zone);
+  const today = useZonedToday(timeZone);
   const [type, setType] = useState<'income' | 'expense'>(transactionForm.type);
   const [amount, setAmount] = useState('');
   const [categoryId, setCategoryId] = useState<number | ''>(transactionForm.category_id || '');
   const [note, setNote] = useState('');
-  const [date, setDate] = useState(transactionForm.date);
+  const [date, setDate] = useState(transactionForm.date || today);
   const [selectedTags, setSelectedTags] = useState<Tag[]>([]);
 
   useEffect(() => {
@@ -57,10 +61,10 @@ export default function TransactionForm({
       setAmount('');
       setCategoryId(transactionForm.category_id || '');
       setNote('');
-      setDate(transactionForm.date);
+      setDate(transactionForm.date || today);
       setSelectedTags([]);
     }
-  }, [transaction]);
+  }, [today, transaction, transactionForm.category_id, transactionForm.date, transactionForm.type]);
 
   const filteredCategories = categories.filter((c) => c.type === type);
 

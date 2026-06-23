@@ -1,54 +1,41 @@
 // 首页仪表盘：汇总收支统计、最近交易和常用入口。
 import { useEffect } from 'react';
 import {
-  Typography,
   Box,
   Grid,
 } from '@mui/material';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useSnackbarStore } from '../stores/snackbarStore';
+import { useSettingsStore } from '../stores/settingsStore';
+import { useZonedToday } from '../hooks/useZonedToday';
 import { StatsCards, RecentTransactions, QuickActions } from '../components/Dashboard';
-import { getCurrentMonthRange } from '../utils/format';
+import { PageHeader } from '../components/ui';
+import { formatYearMonth, getMonthRangeForDate } from '../utils/format';
 
 export default function HomePage() {
   const { transactions, stats, fetchTransactions, fetchStats } = useTransactionStore();
   const { showSnackbar } = useSnackbarStore();
+  const timeZone = useSettingsStore((state) => state.settings.time_zone);
+  const today = useZonedToday(timeZone);
+  const currentMonth = today.substring(0, 7);
+  const { startDate, endDate } = getMonthRangeForDate(today);
 
   useEffect(() => {
-    const { startDate, endDate } = getCurrentMonthRange();
     Promise.all([
       fetchStats({ start_date: startDate, end_date: endDate }),
       fetchTransactions({ page: 1, limit: 5, sort: 'date', order: 'desc' }),
     ]).catch(() => {
       showSnackbar('加载数据失败，请刷新页面重试', 'error');
     });
-  }, [fetchStats, fetchTransactions]);
+  }, [endDate, fetchStats, fetchTransactions, showSnackbar, startDate]);
 
   return (
     <Box>
-      {/* Hero Section */}
-      <Box sx={{ mb: 4 }}>
-        <Typography
-          variant="caption"
-          sx={{ color: 'secondary.main', mb: 1, display: 'block' }}
-        >
-          {new Date().getFullYear()}年{new Date().getMonth() + 1}月
-        </Typography>
-        <Typography
-          variant="h3"
-          sx={{
-            fontFamily: '"Playfair Display", serif',
-            fontWeight: 700,
-            mb: 1,
-            fontSize: { xs: '2rem', md: '2.5rem' },
-          }}
-        >
-          本月概览
-        </Typography>
-        <Typography variant="body1" sx={{ color: 'text.secondary', maxWidth: 480 }}>
-          追踪您的每一笔收支，让财务管理变得简单而优雅
-        </Typography>
-      </Box>
+      <PageHeader
+        eyebrow={formatYearMonth(currentMonth)}
+        title="本月概览"
+        description="追踪您的每一笔收支，让财务管理变得简单而优雅"
+      />
 
       {/* Stats Cards */}
       <StatsCards
@@ -58,7 +45,7 @@ export default function HomePage() {
       />
 
       {/* Two Column Layout */}
-      <Grid container spacing={4}>
+      <Grid container spacing={3}>
         {/* Left Column */}
         <Grid size={{ xs: 12, md: 4 }}>
           <QuickActions

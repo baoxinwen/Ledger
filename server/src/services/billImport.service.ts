@@ -29,8 +29,8 @@ const SOURCE_LABELS: Record<Exclude<ImportSource, 'standard'>, string> = {
 };
 
 const DEFAULT_CATEGORY = {
-  income: { icon: '💰', color: '#2ECC71' },
-  expense: { icon: '📦', color: '#BDC3C7' },
+  income: { icon: '💰' },
+  expense: { icon: '📦' },
 } as const;
 
 export class BillImportService {
@@ -70,7 +70,7 @@ export class BillImportService {
             name: categoryName,
             type: transaction.type,
             icon: defaults.icon,
-            color: defaults.color,
+            color: categoryService.suggestColor(transaction.type, categoryName),
           });
           if (!createdCategoryKeys.has(categoryKey)) {
             result.createdCategories++;

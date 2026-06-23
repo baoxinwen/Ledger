@@ -5,6 +5,9 @@ client/dist/
 client/test-results/
 client/playwright-report/
 playwright-report/
+coverage/
+*.tsbuildinfo
+.codex-runtime/
 *.log
 .DS_Store
 .env

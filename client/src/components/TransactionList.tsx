@@ -43,6 +43,11 @@ export default function TransactionList({
 }: TransactionListProps) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const isDark = theme.palette.mode === 'dark';
+  const fallbackCategoryColor = (type: TransactionWithDetails['type']) =>
+    type === 'expense'
+      ? (isDark ? '#B06D73' : '#8A5A61')
+      : (isDark ? '#7A8450' : '#5F6F52');
 
   // Mobile card layout
   if (isMobile) {
@@ -57,7 +62,8 @@ export default function TransactionList({
                     sx={{
                       width: 40,
                       height: 40,
-                      bgcolor: transaction.type === 'expense' ? 'error.light' : 'success.light',
+                      bgcolor: transaction.category.color || fallbackCategoryColor(transaction.type),
+                      color: '#fff',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -184,7 +190,8 @@ export default function TransactionList({
                       sx={{
                         width: 32,
                         height: 32,
-                        bgcolor: transaction.type === 'expense' ? 'error.light' : 'success.light',
+                        bgcolor: transaction.category.color || fallbackCategoryColor(transaction.type),
+                        color: '#fff',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',

@@ -2,8 +2,6 @@
 import {
   Typography,
   Box,
-  Card,
-  CardContent,
   List,
   ListItem,
   ListItemText,
@@ -20,6 +18,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import type { TransactionWithDetails } from '../../types';
 import { formatCompactAmount } from '../../utils/format';
+import { EmptyState, SectionCard } from '../ui';
 
 interface RecentTransactionsProps {
   transactions: TransactionWithDetails[];
@@ -29,26 +28,23 @@ export default function RecentTransactions({ transactions }: RecentTransactionsP
   const navigate = useNavigate();
 
   return (
-    <Card sx={{ height: '100%' }}>
-      <CardContent>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-            最近记录
-          </Typography>
-          <Button
-            endIcon={<ArrowIcon />}
-            onClick={() => navigate('/transactions')}
-            sx={{
-              color: 'secondary.main',
-              fontWeight: 600,
-              fontSize: '0.8rem',
-              '&:hover': { bgcolor: 'transparent' },
-            }}
-          >
-            查看全部
-          </Button>
-        </Box>
-
+    <SectionCard
+      title="最近记录"
+      action={(
+        <Button
+          endIcon={<ArrowIcon />}
+          onClick={() => navigate('/transactions')}
+          sx={{
+            color: 'secondary.main',
+            fontWeight: 600,
+            fontSize: '0.8rem',
+            '&:hover': { bgcolor: 'transparent' },
+          }}
+        >
+          查看全部
+        </Button>
+      )}
+    >
         <List disablePadding>
           {transactions.map((transaction, index) => (
             <Box key={transaction.id}>
@@ -66,7 +62,8 @@ export default function RecentTransactions({ transactions }: RecentTransactionsP
                     sx={{
                       width: 44,
                       height: 44,
-                      bgcolor: transaction.type === 'expense' ? 'error.light' : 'success.light',
+                      bgcolor: transaction.category.color || (transaction.type === 'expense' ? 'error.main' : 'success.main'),
+                      color: '#fff',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -116,22 +113,21 @@ export default function RecentTransactions({ transactions }: RecentTransactionsP
           ))}
 
           {transactions.length === 0 && (
-            <Box sx={{ textAlign: 'center', py: 6 }}>
-              <ReceiptIcon sx={{ fontSize: 48, color: 'divider', mb: 2 }} />
-              <Typography variant="body1" sx={{ color: 'text.secondary', mb: 2 }}>
-                暂无记录
-              </Typography>
-              <Button
-                variant="outlined"
-                startIcon={<AddIcon />}
-                onClick={() => navigate('/transactions')}
-              >
-                开始记账
-              </Button>
-            </Box>
+            <EmptyState
+              icon={<ReceiptIcon sx={{ fontSize: 44 }} />}
+              title="暂无记录"
+              action={(
+                <Button
+                  variant="outlined"
+                  startIcon={<AddIcon />}
+                  onClick={() => navigate('/transactions')}
+                >
+                  开始记账
+                </Button>
+              )}
+            />
           )}
         </List>
-      </CardContent>
-    </Card>
+    </SectionCard>
   );
 }

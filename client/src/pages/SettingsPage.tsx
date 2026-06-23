@@ -2,14 +2,14 @@
 import { useEffect, useState } from 'react';
 import {
   Box,
-  Typography,
   Tabs,
   Tab,
 } from '@mui/material';
 import { useCategoryStore } from '../stores/categoryStore';
 import { useTagStore } from '../stores/tagStore';
 import { categoryApi, tagApi } from '../api';
-import { CategoryManager, TagManager, ImportExportManager } from '../components/Settings';
+import { CategoryManager, TagManager, ImportExportManager, PreferenceManager } from '../components/Settings';
+import { PageHeader } from '../components/ui';
 
 export default function SettingsPage() {
   const { categories, fetchCategories } = useCategoryStore();
@@ -67,41 +67,65 @@ export default function SettingsPage() {
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>
-        设置
-      </Typography>
+      <PageHeader
+        eyebrow="应用设置"
+        title="设置"
+        description="管理分类、标签、数据备份和个人偏好"
+      />
 
-      <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)} sx={{ mb: 2 }}>
+      <Tabs
+        value={tabValue}
+        onChange={(_, v) => setTabValue(v)}
+        variant="scrollable"
+        scrollButtons="auto"
+        sx={{
+          mb: 3,
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+          minHeight: 44,
+          '& .MuiTab-root': {
+            minHeight: 44,
+            px: 2,
+          },
+        }}
+      >
         <Tab label="分类管理" />
         <Tab label="标签管理" />
         <Tab label="数据导入导出" />
+        <Tab label="偏好设置" />
       </Tabs>
 
-      {tabValue === 0 && (
-        <CategoryManager
-          categories={categories}
-          onCreate={handleCreateCategory}
-          onUpdate={handleUpdateCategory}
-          onDelete={handleDeleteCategory}
-        />
-      )}
+      <Box sx={{ pt: 0.5 }}>
+        {tabValue === 0 && (
+          <CategoryManager
+            categories={categories}
+            onCreate={handleCreateCategory}
+            onUpdate={handleUpdateCategory}
+            onDelete={handleDeleteCategory}
+          />
+        )}
 
-      {tabValue === 1 && (
-        <TagManager
-          tags={tags}
-          onCreate={handleCreateTag}
-          onDelete={handleDeleteTag}
-        />
-      )}
+        {tabValue === 1 && (
+          <TagManager
+            tags={tags}
+            onCreate={handleCreateTag}
+            onDelete={handleDeleteTag}
+          />
+        )}
 
-      {tabValue === 2 && (
-        <ImportExportManager
-          onImportComplete={() => {
-            fetchCategories();
-            fetchTags();
-          }}
-        />
-      )}
+        {tabValue === 2 && (
+          <ImportExportManager
+            onImportComplete={() => {
+              fetchCategories();
+              fetchTags();
+            }}
+          />
+        )}
+
+        {tabValue === 3 && (
+          <PreferenceManager />
+        )}
+      </Box>
     </Box>
   );
 }

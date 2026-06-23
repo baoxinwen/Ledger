@@ -3,8 +3,6 @@ import React, { useState } from 'react';
 import {
   Box,
   Typography,
-  Card,
-  CardContent,
   Button,
   Grid,
   TextField,
@@ -19,6 +17,7 @@ import {
 import { importExportApi } from '../../api';
 import { useSnackbarStore } from '../../stores/snackbarStore';
 import type { ImportFileSource, ImportResult } from '../../types';
+import { SectionCard } from '../ui';
 
 interface ImportExportManagerProps {
   onImportComplete: () => void;
@@ -74,21 +73,27 @@ export default function ImportExportManager({ onImportComplete }: ImportExportMa
 
   return (
     <Box>
-      <Typography variant="h5" gutterBottom>数据导入导出</Typography>
+      <Box sx={{ mb: 2 }}>
+        <Typography variant="h5">数据导入导出</Typography>
+        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.25 }}>
+          导出备份或导入第三方账单
+        </Typography>
+      </Box>
 
-      <Grid container spacing={3}>
+      <Grid container spacing={3} alignItems="stretch">
         <Grid size={{ xs: 12, md: 6 }}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>导出数据</Typography>
-              <Typography color="text.secondary" sx={{ mb: 2 }}>
-                将所有收支记录导出为文件
-              </Typography>
-              <Box sx={{ display: 'flex', gap: 2 }}>
+          <SectionCard
+            testId="export-card"
+            title="导出数据"
+            subtitle="将所有收支记录导出为文件"
+            contentSx={{ display: 'flex', flexDirection: 'column', gap: 2 }}
+          >
+              <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', mt: 'auto' }}>
                 <Button
                   variant="outlined"
                   startIcon={<DownloadIcon />}
                   onClick={() => handleExport('json')}
+                  sx={{ height: 40, minWidth: 136 }}
                 >
                   导出 JSON
                 </Button>
@@ -96,22 +101,22 @@ export default function ImportExportManager({ onImportComplete }: ImportExportMa
                   variant="outlined"
                   startIcon={<DownloadIcon />}
                   onClick={() => handleExport('csv')}
+                  sx={{ height: 40, minWidth: 136 }}
                 >
                   导出 CSV
                 </Button>
               </Box>
-            </CardContent>
-          </Card>
+          </SectionCard>
         </Grid>
 
         <Grid size={{ xs: 12, md: 6 }}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>导入数据</Typography>
-              <Typography color="text.secondary" sx={{ mb: 2 }}>
-                从标准 JSON/CSV、支付宝 CSV 或微信 XLSX 文件导入收支记录
-              </Typography>
-              <Stack spacing={2}>
+          <SectionCard
+            testId="import-card"
+            title="导入数据"
+            subtitle="从标准 JSON/CSV、支付宝 CSV 或微信 XLSX 文件导入收支记录"
+            contentSx={{ display: 'flex', flexDirection: 'column', gap: 2 }}
+          >
+              <Stack spacing={1.5}>
                 <TextField
                   select
                   label="导入类型"
@@ -119,6 +124,7 @@ export default function ImportExportManager({ onImportComplete }: ImportExportMa
                   value={importSource}
                   onChange={(event) => setImportSource(event.target.value as ImportFileSource)}
                   fullWidth
+                  sx={{ '& .MuiInputBase-root': { height: 40 } }}
                 >
                   <MenuItem value="auto">自动识别</MenuItem>
                   <MenuItem value="standard">标准 JSON/CSV</MenuItem>
@@ -130,6 +136,7 @@ export default function ImportExportManager({ onImportComplete }: ImportExportMa
                   component="label"
                   startIcon={<UploadIcon />}
                   disabled={importing}
+                  sx={{ height: 40, alignSelf: { xs: 'stretch', sm: 'flex-start' }, minWidth: 136 }}
                 >
                   {importing ? '导入中...' : '选择文件'}
                   <input
@@ -143,7 +150,12 @@ export default function ImportExportManager({ onImportComplete }: ImportExportMa
               {lastImportResult && (
                 <Alert
                   severity={lastImportResult.failed > 0 ? 'warning' : 'success'}
-                  sx={{ mt: 2 }}
+                  sx={{
+                    mt: 0.5,
+                    maxHeight: 260,
+                    overflowY: 'auto',
+                    alignItems: 'flex-start',
+                  }}
                 >
                   <Typography variant="body2">
                     成功 {lastImportResult.success} 条，重复 {lastImportResult.duplicates} 条，
@@ -176,8 +188,7 @@ export default function ImportExportManager({ onImportComplete }: ImportExportMa
                   )}
                 </Alert>
               )}
-            </CardContent>
-          </Card>
+          </SectionCard>
         </Grid>
       </Grid>
     </Box>

@@ -1,5 +1,5 @@
 // 预算页：管理月度/年度预算，并展示每个预算的执行状态。
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Box,
   Typography,
@@ -16,8 +16,6 @@ import {
   LinearProgress,
   IconButton,
   Chip,
-  useTheme,
-  useMediaQuery,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -31,8 +29,11 @@ import {
 import { budgetApi } from '../api';
 import { useCategoryStore } from '../stores/categoryStore';
 import { useSnackbarStore } from '../stores/snackbarStore';
+import { useSettingsStore } from '../stores/settingsStore';
+import { useZonedToday } from '../hooks/useZonedToday';
 import type { Budget, BudgetStatus } from '../types';
 import { formatAmount, calculatePercentage } from '../utils/format';
+import { EmptyState, MetricCard, PageHeader } from '../components/ui';
 
 /** 预算管理页面 */
 export default function BudgetsPage() {
@@ -41,27 +42,25 @@ export default function BudgetsPage() {
   const [budgetStatuses, setBudgetStatuses] = useState<BudgetStatus[]>([]);
   const [formOpen, setFormOpen] = useState(false);
   const [editingBudget, setEditingBudget] = useState<Budget | null>(null);
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const timeZone = useSettingsStore((state) => state.settings.time_zone);
+  const today = useZonedToday(timeZone);
+  const currentMonth = today.substring(0, 7);
+  const currentMonthStartDate = `${currentMonth}-01`;
 
   // 表单数据
   const [formData, setFormData] = useState({
     category_id: '' as number | '',
     amount: '',
     period: 'monthly' as 'monthly' | 'yearly',
-    start_date: new Date().toISOString().substring(0, 7) + '-01',
+    start_date: currentMonthStartDate,
   });
-
-  // 当前月份，用于查询预算状态
-  const currentMonth = new Date().toISOString().substring(0, 7);
 
   useEffect(() => {
     fetchCategories();
-    loadBudgets();
-  }, []);
+  }, [fetchCategories]);
 
   /** 加载预算列表和状态 */
-  const loadBudgets = async () => {
+  const loadBudgets = useCallback(async () => {
     try {
       const [, statusRes] = await Promise.all([
         budgetApi.getAll(),
@@ -72,7 +71,11 @@ export default function BudgetsPage() {
       console.error('加载预算失败:', error);
       showSnackbar('加载预算数据失败', 'error');
     }
-  };
+  }, [currentMonth, showSnackbar]);
+
+  useEffect(() => {
+    loadBudgets();
+  }, [loadBudgets]);
 
   /** 提交预算表单（新增/编辑） */
   const handleSubmit = async () => {
@@ -134,7 +137,7 @@ export default function BudgetsPage() {
       category_id: '',
       amount: '',
       period: 'monthly',
-      start_date: new Date().toISOString().substring(0, 7) + '-01',
+      start_date: currentMonthStartDate,
     });
   };
 
@@ -154,37 +157,11 @@ export default function BudgetsPage() {
 
   return (
     <Box>
-      {/* 页面标题 */}
-      <Box sx={{ mb: 4 }}>
-        <Typography
-          variant="caption"
-          sx={{ color: 'secondary.main', mb: 1, display: 'block' }}
-        >
-          预算管理
-        </Typography>
-        <Box sx={{
-          display: 'flex',
-          flexDirection: isMobile ? 'column' : 'row',
-          justifyContent: 'space-between',
-          alignItems: isMobile ? 'stretch' : 'flex-end',
-          gap: isMobile ? 2 : 0,
-        }}>
-          <Box>
-            <Typography
-              variant="h3"
-              sx={{
-                fontFamily: '"Playfair Display", serif',
-                fontWeight: 700,
-                mb: 0.5,
-                fontSize: { xs: '2rem', md: '2.5rem' },
-              }}
-            >
-              预算概览
-            </Typography>
-            <Typography variant="body1" sx={{ color: 'text.secondary' }}>
-              {currentMonth} 月度预算执行情况
-            </Typography>
-          </Box>
+      <PageHeader
+        eyebrow="预算管理"
+        title="预算概览"
+        description={`${currentMonth} 月度预算执行情况`}
+        action={(
           <Button
             variant="contained"
             startIcon={<AddIcon />}
@@ -193,87 +170,46 @@ export default function BudgetsPage() {
               setEditingBudget(null);
               setFormOpen(true);
             }}
-            fullWidth={isMobile}
+            fullWidth
           >
             新增预算
           </Button>
-        </Box>
-      </Box>
+        )}
+      />
 
       {/* 总览卡片 */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
+      <Grid container spacing={2.5} sx={{ mb: 4 }}>
         <Grid size={{ xs: 12, md: 4 }}>
-          <Card sx={{
-            background: 'linear-gradient(135deg, #2563eb 0%, #60a5fa 100%)',
-            color: '#fff',
-            border: 'none',
-          }}>
-            <CardContent>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <Box>
-                  <Typography sx={{ opacity: 0.8, fontSize: '0.875rem' }}>
-                    总预算
-                  </Typography>
-                  <Typography variant="h4" sx={{ fontFamily: '"Playfair Display", serif', fontWeight: 700, mt: 1 }}>
-                    {formatAmount(totalBudget)}
-                  </Typography>
-                </Box>
-                <BudgetIcon sx={{ fontSize: 40, opacity: 0.5 }} />
-              </Box>
-            </CardContent>
-          </Card>
+          <MetricCard
+            testId="budget-total-card"
+            label="总预算"
+            value={formatAmount(totalBudget)}
+            helper="当前周期预算额度"
+            icon={<BudgetIcon />}
+            tone="gold"
+          />
         </Grid>
 
         <Grid size={{ xs: 12, md: 4 }}>
-          <Card sx={{
-            background: hasOverBudget
-              ? 'linear-gradient(135deg, #dc2626 0%, #f87171 100%)'
-              : 'linear-gradient(135deg, #059669 0%, #34d399 100%)',
-            color: '#fff',
-            border: 'none',
-          }}>
-            <CardContent>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <Box>
-                  <Typography sx={{ opacity: 0.8, fontSize: '0.875rem' }}>
-                    已花费
-                  </Typography>
-                  <Typography variant="h4" sx={{ fontFamily: '"Playfair Display", serif', fontWeight: 700, mt: 1 }}>
-                    {formatAmount(totalSpent)}
-                  </Typography>
-                </Box>
-                <SpentIcon sx={{ fontSize: 40, opacity: 0.5 }} />
-              </Box>
-            </CardContent>
-          </Card>
+          <MetricCard
+            testId="budget-spent-card"
+            label="已花费"
+            value={formatAmount(totalSpent)}
+            helper={hasOverBudget ? '存在超支预算' : '仍在预算范围内'}
+            icon={<SpentIcon />}
+            tone={hasOverBudget ? 'expense' : 'neutral'}
+          />
         </Grid>
 
         <Grid size={{ xs: 12, md: 4 }}>
-          <Card sx={{
-            background: totalRemaining >= 0
-              ? 'linear-gradient(135deg, #16a085 0%, #1abc9c 100%)'
-              : 'linear-gradient(135deg, #e74c3c 0%, #c0392b 100%)',
-            color: '#fff',
-            border: 'none',
-          }}>
-            <CardContent>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <Box>
-                  <Typography sx={{ opacity: 0.8, fontSize: '0.875rem' }}>
-                    {totalRemaining >= 0 ? '剩余预算' : '超支金额'}
-                  </Typography>
-                  <Typography variant="h4" sx={{ fontFamily: '"Playfair Display", serif', fontWeight: 700, mt: 1 }}>
-                    {formatAmount(Math.abs(totalRemaining))}
-                  </Typography>
-                </Box>
-                {hasOverBudget ? (
-                  <WarningIcon sx={{ fontSize: 40, opacity: 0.5 }} />
-                ) : (
-                  <RemainingIcon sx={{ fontSize: 40, opacity: 0.5 }} />
-                )}
-              </Box>
-            </CardContent>
-          </Card>
+          <MetricCard
+            testId="budget-remaining-card"
+            label={totalRemaining >= 0 ? '剩余预算' : '超支金额'}
+            value={formatAmount(Math.abs(totalRemaining))}
+            helper={`${totalPercentage.toFixed(1)}% 已使用`}
+            icon={hasOverBudget ? <WarningIcon /> : <RemainingIcon />}
+            tone={totalRemaining >= 0 ? 'income' : 'expense'}
+          />
         </Grid>
       </Grid>
 
@@ -399,15 +335,11 @@ export default function BudgetsPage() {
         {/* 空状态 */}
         {budgetStatuses.length === 0 && (
           <Grid size={{ xs: 12 }}>
-            <Card>
-              <CardContent sx={{ textAlign: 'center', py: 6 }}>
-                <BudgetIcon sx={{ fontSize: 64, color: 'divider', mb: 2 }} />
-                <Typography variant="h6" color="text.secondary" gutterBottom>
-                  暂无预算
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                  点击上方按钮创建您的第一个预算
-                </Typography>
+            <EmptyState
+              icon={<BudgetIcon sx={{ fontSize: 56 }} />}
+              title="暂无预算"
+              description="点击上方按钮创建您的第一个预算"
+              action={(
                 <Button
                   variant="outlined"
                   startIcon={<AddIcon />}
@@ -419,8 +351,8 @@ export default function BudgetsPage() {
                 >
                   创建预算
                 </Button>
-              </CardContent>
-            </Card>
+              )}
+            />
           </Grid>
         )}
       </Grid>

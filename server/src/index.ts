@@ -9,6 +9,7 @@ import tagRoutes from './routes/tags';
 import transactionRoutes from './routes/transactions';
 import budgetRoutes from './routes/budgets';
 import importExportRoutes from './routes/import-export';
+import settingsRoutes from './routes/settings';
 
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception:', err);
@@ -42,6 +43,7 @@ app.use('/api/categories', categoryRoutes);
 app.use('/api/tags', tagRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/budgets', budgetRoutes);
+app.use('/api/settings', settingsRoutes);
 app.use('/api', importExportRoutes);
 
 if (process.env.NODE_ENV === 'production') {

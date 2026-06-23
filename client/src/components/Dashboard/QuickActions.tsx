@@ -2,8 +2,6 @@
 import {
   Typography,
   Box,
-  Card,
-  CardContent,
   Button,
   LinearProgress,
 } from '@mui/material';
@@ -14,6 +12,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { calculatePercentage } from '../../utils/format';
 import { ROUTES } from '../../constants/routes';
+import { SectionCard } from '../ui';
 
 interface QuickActionsProps {
   totalIncome: number;
@@ -27,11 +26,7 @@ export default function QuickActions({ totalIncome, totalExpense }: QuickActions
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
       {/* Expense Ratio */}
-      <Card>
-        <CardContent>
-          <Typography variant="caption" sx={{ color: 'text.secondary', mb: 3, display: 'block' }}>
-            支出占比
-          </Typography>
+      <SectionCard title="支出占比">
           <Box sx={{ mb: 2 }}>
             <Typography
               variant="h4"
@@ -57,15 +52,10 @@ export default function QuickActions({ totalIncome, totalExpense }: QuickActions
               },
             }}
           />
-        </CardContent>
-      </Card>
+      </SectionCard>
 
       {/* Quick Actions */}
-      <Card>
-        <CardContent>
-          <Typography variant="caption" sx={{ color: 'text.secondary', mb: 3, display: 'block' }}>
-            快捷操作
-          </Typography>
+      <SectionCard title="快捷操作">
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
             <Button
               variant="contained"
@@ -86,8 +76,7 @@ export default function QuickActions({ totalIncome, totalExpense }: QuickActions
               查看账单
             </Button>
           </Box>
-        </CardContent>
-      </Card>
+      </SectionCard>
     </Box>
   );
 }

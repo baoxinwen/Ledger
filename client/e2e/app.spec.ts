@@ -1,5 +1,32 @@
 import { test, expect } from '@playwright/test';
 
+const EDITORIAL_CATEGORY_COLORS = [
+  '#5F6F52',
+  '#4F6F6B',
+  '#5C6478',
+  '#8A5A61',
+  '#9A7B4F',
+  '#6D597A',
+  '#6B7A8F',
+  '#7C6F55',
+  '#4F5D75',
+  '#7A8450',
+  '#8B6F71',
+  '#5D737E',
+  '#A06A4B',
+  '#6D8A74',
+  '#8B7D63',
+  '#536271',
+  '#7F5F72',
+  '#466A66',
+  '#9A8A4E',
+  '#6E6658',
+  '#59656F',
+  '#8A6F47',
+  '#6F7D64',
+  '#766A8A',
+];
+
 test.describe('个人记账本应用', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
@@ -15,6 +42,13 @@ test.describe('个人记账本应用', () => {
       await expect(page.getByText('本月收入')).toBeVisible();
       await expect(page.getByText('本月支出')).toBeVisible();
       await expect(page.getByText('本月结余')).toBeVisible();
+    });
+
+    test('首页指标卡不再使用旧高饱和渐变', async ({ page }) => {
+      const backgroundImages = await page.locator('[data-testid^="home-"][data-testid$="-card"]').evaluateAll((cards) =>
+        cards.map((card) => window.getComputedStyle(card as HTMLElement).backgroundImage)
+      );
+      expect(backgroundImages.every((backgroundImage) => backgroundImage === 'none')).toBeTruthy();
     });
 
     test('应该显示最近记录区域', async ({ page }) => {
@@ -138,7 +172,7 @@ test.describe('个人记账本应用', () => {
     });
 
     test('应该显示图表', async ({ page }) => {
-      await expect(page.getByText('分类支出占比')).toBeVisible();
+      await expect(page.getByText('分类金额占比')).toBeVisible();
       await expect(page.getByText('每日收支趋势')).toBeVisible();
     });
   });
@@ -155,6 +189,13 @@ test.describe('个人记账本应用', () => {
 
     test('应该显示新增预算按钮', async ({ page }) => {
       await expect(page.getByRole('button', { name: '新增预算' })).toBeVisible();
+    });
+
+    test('预算总览卡不再使用旧高饱和渐变', async ({ page }) => {
+      const backgroundImages = await page.locator('[data-testid^="budget-"][data-testid$="-card"]').evaluateAll((cards) =>
+        cards.map((card) => window.getComputedStyle(card as HTMLElement).backgroundImage)
+      );
+      expect(backgroundImages.every((backgroundImage) => backgroundImage === 'none')).toBeTruthy();
     });
 
     test('应该能够打开新增预算对话框', async ({ page }) => {
@@ -218,5 +259,108 @@ test.describe('个人记账本应用', () => {
       await expect(page.getByText('导出数据')).toBeVisible();
       await expect(page.getByText('导入数据')).toBeVisible();
     });
+  });
+});
+
+test.describe('统计图表交互优化', () => {
+  test.beforeEach(async ({ page }) => {
+    const categoryStats = Array.from({ length: 10 }, (_, index) => ({
+      name: `分类${index + 1}`,
+      icon: '📦',
+      color: '#2ECC71',
+      total: 1000 - index * 70,
+    }));
+
+    await page.route('**/api/transactions/stats**', async (route) => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          totalIncome: 5000,
+          totalExpense: 4200,
+          balance: 800,
+          categoryStats: [
+            ...categoryStats,
+            { name: '零元分类', icon: '📦', color: '#BDC3C7', total: 0 },
+          ],
+          dailyStats: [
+            { date: '2026-06-01', type: 'income', total: 5000 },
+            { date: '2026-06-02', type: 'expense', total: 4200 },
+          ],
+        }),
+      });
+    });
+
+    await page.goto('/statistics');
+    await page.waitForLoadState('networkidle');
+  });
+
+  test('应该聚合过多分类、去重图例颜色并支持悬停中心信息', async ({ page }) => {
+    await expect(page.getByText('分类金额占比')).toBeVisible();
+    await expect(page.getByTestId('pie-legend-item-其他分类')).toBeVisible();
+
+    const colors = await page.locator('[data-testid^="pie-legend-swatch-"]').evaluateAll((nodes) =>
+      nodes.map((node) => window.getComputedStyle(node as HTMLElement).backgroundColor)
+    );
+    expect(new Set(colors).size).toBe(colors.length);
+    const hexColors = await page.locator('[data-testid^="pie-legend-swatch-"]').evaluateAll((nodes) =>
+      nodes.map((node) => (node as HTMLElement).dataset.color)
+    );
+    expect(hexColors.every((color) => color && EDITORIAL_CATEGORY_COLORS.includes(color))).toBeTruthy();
+
+    await page.getByTestId('pie-legend-item-分类3').hover();
+    await expect(page.getByTestId('pie-center-name')).toContainText('分类3');
+  });
+
+  test('移动端点击图例后保持选中且没有黑色焦点框', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.reload();
+    await page.waitForLoadState('networkidle');
+
+    await page.getByTestId('pie-legend-item-分类4').click();
+    await expect(page.getByTestId('pie-center-name')).toContainText('分类4');
+
+    const outlineStyles = await page.locator('.recharts-sector').evaluateAll((nodes) =>
+      nodes.map((node) => window.getComputedStyle(node as SVGElement).outlineStyle)
+    );
+    expect(outlineStyles.every((outlineStyle) => outlineStyle === 'none')).toBeTruthy();
+  });
+});
+
+test.describe('设置页布局优化', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.route('**/api/categories**', async (route) => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify([
+          { id: 1, name: '餐饮', type: 'expense', icon: '🍽️', color: '#8A5A61', is_preset: 1, sort_order: 0 },
+          { id: 2, name: '交通', type: 'expense', icon: '🚗', color: '#5D737E', is_preset: 1, sort_order: 1 },
+          { id: 3, name: '工资', type: 'income', icon: '💰', color: '#5F6F52', is_preset: 1, sort_order: 0 },
+        ]),
+      });
+    });
+    await page.route('**/api/tags**', async (route) => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify([{ id: 1, name: '支付宝' }, { id: 2, name: '微信' }]),
+      });
+    });
+    await page.goto('/settings');
+    await page.waitForLoadState('networkidle');
+  });
+
+  test('分类卡片显示颜色，标签表单对齐，导入导出卡片等高', async ({ page }) => {
+    await expect(page.getByTestId('category-color-餐饮')).toBeVisible();
+
+    await page.getByRole('tab', { name: '标签管理' }).click();
+    const tagInputBox = await page.getByTestId('tag-name-field').boundingBox();
+    const addButtonBox = await page.getByRole('button', { name: '添加标签' }).boundingBox();
+    expect(Math.round(tagInputBox?.y || 0)).toBe(Math.round(addButtonBox?.y || 0));
+    expect(Math.round(tagInputBox?.height || 0)).toBe(Math.round(addButtonBox?.height || 0));
+
+    await page.getByRole('tab', { name: '数据导入导出' }).click();
+    const exportCardBox = await page.getByTestId('export-card').boundingBox();
+    const importCardBox = await page.getByTestId('import-card').boundingBox();
+    expect(Math.round(exportCardBox?.y || 0)).toBe(Math.round(importCardBox?.y || 0));
+    expect(Math.round(exportCardBox?.height || 0)).toBe(Math.round(importCardBox?.height || 0));
   });
 });

@@ -62,12 +62,27 @@ export default function CategoryManager({ categories, onCreate, onUpdate, onDele
   };
 
   const renderCategoryGrid = (title: string, cats: Category[]) => (
-    <>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2, mt: cats === incomeCategories ? 4 : 0 }}>
-        <Typography variant="h5">{title}</Typography>
+    <Box sx={{ mt: cats === incomeCategories ? 4 : 0 }}>
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 2,
+          mb: 2,
+        }}
+      >
+        <Box>
+          <Typography variant="h5">{title}</Typography>
+          <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.25 }}>
+            {cats.length} 个分类
+          </Typography>
+        </Box>
         {cats === expenseCategories && (
           <Button
             startIcon={<AddIcon />}
+            variant="outlined"
+            sx={{ height: 40, flexShrink: 0 }}
             onClick={() => {
               setEditingCategory(null);
               setFormOpen(true);
@@ -81,20 +96,34 @@ export default function CategoryManager({ categories, onCreate, onUpdate, onDele
       <Grid container spacing={2}>
         {cats.map((cat) => (
           <Grid size={{ xs: 12, sm: 6, md: 4 }} key={cat.id}>
-            <Card>
-              <CardContent>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Typography variant="h5" sx={{ mr: 1 }}>{cat.icon}</Typography>
-                    <Typography>{cat.name}</Typography>
+            <Card sx={{ height: 72 }}>
+              <CardContent sx={{ height: '100%', py: 1.25, '&:last-child': { pb: 1.25 } }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '100%', gap: 1.5 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0, gap: 1.25 }}>
+                    <Box
+                      data-testid={`category-color-${cat.name}`}
+                      sx={{
+                        width: 4,
+                        height: 40,
+                        bgcolor: cat.color || 'divider',
+                        flexShrink: 0,
+                      }}
+                    />
+                    <Typography variant="h5" sx={{ width: 30, textAlign: 'center', flexShrink: 0 }}>{cat.icon || '•'}</Typography>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography noWrap sx={{ fontWeight: 600 }}>{cat.name}</Typography>
+                      <Typography variant="caption" sx={{ color: 'text.secondary', letterSpacing: 0, textTransform: 'none' }}>
+                        {cat.is_preset ? '预置分类' : '自定义分类'}
+                      </Typography>
+                    </Box>
                   </Box>
-                  <Box>
+                  <Box sx={{ width: 72, display: 'flex', justifyContent: 'flex-end' }}>
                     {!cat.is_preset && (
                       <>
-                        <IconButton size="small" onClick={() => handleEdit(cat)}>
+                        <IconButton size="small" onClick={() => handleEdit(cat)} aria-label={`编辑${cat.name}`}>
                           <EditIcon />
                         </IconButton>
-                        <IconButton size="small" onClick={() => handleDelete(cat.id)}>
+                        <IconButton size="small" onClick={() => handleDelete(cat.id)} aria-label={`删除${cat.name}`}>
                           <DeleteIcon />
                         </IconButton>
                       </>
@@ -106,7 +135,7 @@ export default function CategoryManager({ categories, onCreate, onUpdate, onDele
           </Grid>
         ))}
       </Grid>
-    </>
+    </Box>
   );
 
   return (
@@ -117,6 +146,7 @@ export default function CategoryManager({ categories, onCreate, onUpdate, onDele
       <CategoryFormDialog
         open={formOpen}
         category={editingCategory}
+        categories={categories}
         onClose={() => {
           setFormOpen(false);
           setEditingCategory(null);

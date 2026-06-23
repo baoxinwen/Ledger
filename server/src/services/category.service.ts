@@ -1,6 +1,7 @@
 // 分类服务封装分类表操作，账单导入会按“名称 + 类型”精确匹配分类。
 import db from '../database';
 import { Category } from '../types';
+import { normalizeHexColor, suggestCategoryColor } from '../utils/categoryColor';
 
 export class CategoryService {
   getAll(type?: 'income' | 'expense'): Category[] {
@@ -21,12 +22,18 @@ export class CategoryService {
   create(data: { name: string; type: 'income' | 'expense'; icon?: string; color?: string }): Category {
     const maxOrder = db.prepare('SELECT MAX(sort_order) as max FROM categories WHERE type = ?').get(data.type) as { max: number | null };
     const sortOrder = (maxOrder.max || 0) + 1;
+    const color = normalizeHexColor(data.color) || this.suggestColor(data.type, data.name);
 
     const result = db.prepare(
       'INSERT INTO categories (name, type, icon, color, is_preset, sort_order) VALUES (?, ?, ?, ?, 0, ?)'
-    ).run(data.name, data.type, data.icon || null, data.color || null, sortOrder);
+    ).run(data.name, data.type, data.icon || null, color, sortOrder);
 
     return this.getById(result.lastInsertRowid as number)!;
+  }
+
+  suggestColor(type: 'income' | 'expense', name: string): string {
+    // 建类入口统一通过这里选色，避免支付宝/微信批量导入的新分类都落到同一个默认色。
+    return suggestCategoryColor(type, name, this.getAll(type));
   }
 
   update(id: number, data: { name?: string; icon?: string; color?: string }): Category | null {
