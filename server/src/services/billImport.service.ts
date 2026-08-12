@@ -5,6 +5,7 @@ import { ImportableTransaction, ImportDiagnostic, ImportResult } from '../types'
 import { categoryService } from './category.service';
 import { tagService } from './tag.service';
 import { transactionService } from './transaction.service';
+import { getErrorMessage } from '../utils/errors';
 
 // 单个 XLSX ZIP 条目的最大解压体积，防止单条目 zip bomb。
 const MAX_XLSX_ENTRY_BYTES = 50 * 1024 * 1024;
@@ -620,7 +621,7 @@ function rowToRecord(header: string[], row: string[]): Record<string, string> {
 
 // 仅匹配唯一索引冲突；不要用宽泛的 /constraint/，否则会把外键失败等误判为“重复记录”。
 export function isUniqueConstraintError(error: unknown): boolean {
-  return error instanceof Error && /UNIQUE constraint failed/i.test(error.message);
+  return /UNIQUE constraint failed/i.test(getErrorMessage(error));
 }
 
 function parseFirstWorksheet(buffer: Buffer): string[][] {

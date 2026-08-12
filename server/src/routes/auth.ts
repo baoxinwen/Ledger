@@ -4,6 +4,7 @@ import { Router, Request, Response } from 'express';
 import { authService } from '../services/auth.service';
 import { getSessionToken, SESSION_COOKIE_NAME } from '../middleware/auth';
 import { getClientIp, checkLoginAttempt, recordLoginFailure, clearLoginFailures } from '../utils/rateLimit';
+import { getErrorMessage } from '../utils/errors';
 
 const router = Router();
 
@@ -44,7 +45,7 @@ router.post('/setup', (req: Request, res: Response) => {
     setSessionCookie(res, result.sessionToken);
     res.status(201).json({ user: result.user });
   } catch (error) {
-    res.status(400).json({ error: error instanceof Error ? error.message : '创建账户失败' });
+    res.status(400).json({ error: getErrorMessage(error) || '创建账户失败' });
   }
 });
 
@@ -60,7 +61,7 @@ router.post('/login', (req: Request, res: Response) => {
     res.json({ user: result.user });
   } catch (error) {
     recordLoginFailure(clientKey);
-    res.status(401).json({ error: error instanceof Error ? error.message : '登录失败' });
+    res.status(401).json({ error: getErrorMessage(error) || '登录失败' });
   }
 });
 
