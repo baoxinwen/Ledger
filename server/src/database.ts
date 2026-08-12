@@ -11,7 +11,10 @@ if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
 
-const dbPath = path.join(dataDir, 'ledger.db');
+// LEDGER_DB_PATH 用于让测试/e2e 指向隔离的临时数据库；未设置时默认使用挂载卷内的账本文件。
+const dbPath = process.env.LEDGER_DB_PATH
+  ? path.resolve(process.env.LEDGER_DB_PATH)
+  : path.join(dataDir, 'ledger.db');
 const db: DatabaseType = new Database(dbPath);
 
 db.pragma('journal_mode = WAL');
@@ -74,6 +77,22 @@ export function initDatabase(): void {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,
       updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
     CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);

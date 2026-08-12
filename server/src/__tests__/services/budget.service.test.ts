@@ -1,189 +1,64 @@
-// 预算服务测试覆盖预算 CRUD 与状态查询的数据库行为。
+// 预算服务测试：CRUD、月度/年度执行金额计算。
+jest.mock('../../database', () => ({
+  __esModule: true,
+  default: require('../setup').default,
+}));
+
 import db from '../setup';
+import { budgetService } from '../../services/budget.service';
+import { categoryService } from '../../services/category.service';
+import { transactionService } from '../../services/transaction.service';
 
 describe('BudgetService', () => {
-  let cat1Id: number;
-  let cat2Id: number;
+  let expenseId: number;
 
   beforeEach(() => {
-    db.exec('DELETE FROM transactions');
     db.exec('DELETE FROM budgets');
+    db.exec('DELETE FROM transactions');
     db.exec('DELETE FROM categories');
-    
-    const cat1 = db.prepare(`
-      INSERT INTO categories (name, type, icon, color, is_preset, sort_order)
-      VALUES ('餐饮', 'expense', '🍽️', '#FF6B6B', 1, 0)
-    `).run();
-    cat1Id = cat1.lastInsertRowid as number;
 
-    const cat2 = db.prepare(`
-      INSERT INTO categories (name, type, icon, color, is_preset, sort_order)
-      VALUES ('交通', 'expense', '🚗', '#4ECDC4', 1, 1)
-    `).run();
-    cat2Id = cat2.lastInsertRowid as number;
+    const cat = db.prepare(
+      `INSERT INTO categories (name, type, icon, color, is_preset, sort_order) VALUES ('餐饮', 'expense', '🍽️', '#8A5A61', 1, 0)`
+    ).run();
+    expenseId = cat.lastInsertRowid as number;
   });
 
-  describe('getAll', () => {
-    it('should return all budgets', () => {
-      db.prepare(`INSERT INTO budgets (category_id, amount, period, start_date) VALUES (?, ?, ?, ?)`).run(cat1Id, 5000, 'monthly', '2024-01-01');
-      db.prepare(`INSERT INTO budgets (category_id, amount, period, start_date) VALUES (?, ?, ?, ?)`).run(cat2Id, 2000, 'monthly', '2024-01-01');
+  it('CRUD 基础操作', () => {
+    const created = budgetService.create({ category_id: expenseId, amount: 1000, period: 'monthly', start_date: '2026-01-01' });
+    expect(budgetService.getById(created.id)?.amount).toBe(1000);
 
-      const budgets = db.prepare('SELECT * FROM budgets').all();
-      expect(budgets).toHaveLength(2);
-    });
+    const updated = budgetService.update(created.id, { amount: 1500 });
+    expect(updated?.amount).toBe(1500);
 
-    it('should return empty array when no budgets', () => {
-      const budgets = db.prepare('SELECT * FROM budgets').all();
-      expect(budgets).toHaveLength(0);
-    });
+    expect(budgetService.delete(created.id)).toBe(true);
+    expect(budgetService.getById(created.id)).toBeUndefined();
   });
 
-  describe('getById', () => {
-    it('should return budget by id', () => {
-      const result = db.prepare(`
-        INSERT INTO budgets (category_id, amount, period, start_date)
-        VALUES (?, 5000, 'monthly', '2024-01-01')
-      `).run(cat1Id);
+  it('月度预算统计指定月份支出与结余', () => {
+    budgetService.create({ category_id: expenseId, amount: 1000, period: 'monthly', start_date: '2026-01-01' });
+    transactionService.create({ type: 'expense', amount: 400, category_id: expenseId, date: '2026-01-10' });
 
-      const budget = db.prepare('SELECT * FROM budgets WHERE id = ?').get(result.lastInsertRowid);
-      expect(budget).toBeDefined();
-      expect((budget as any).amount).toBe(5000);
-    });
-
-    it('should return undefined for non-existent id', () => {
-      const budget = db.prepare('SELECT * FROM budgets WHERE id = ?').get(999);
-      expect(budget).toBeUndefined();
-    });
+    const status = budgetService.getBudgetStatus('2026-01');
+    expect(status).toHaveLength(1);
+    expect(status[0].spent).toBe(400);
+    expect(status[0].remaining).toBe(600);
   });
 
-  describe('create', () => {
-    it('should create budget for category', () => {
-      const result = db.prepare(
-        'INSERT INTO budgets (category_id, amount, period, start_date) VALUES (?, ?, ?, ?)'
-      ).run(cat1Id, 5000, 'monthly', '2024-01-01');
+  it('总预算（无分类）统计全部支出', () => {
+    budgetService.create({ amount: 2000, period: 'monthly', start_date: '2026-01-01' });
+    transactionService.create({ type: 'expense', amount: 500, category_id: expenseId, date: '2026-01-05' });
 
-      const budget = db.prepare('SELECT * FROM budgets WHERE id = ?').get(result.lastInsertRowid);
-      expect(budget).toBeDefined();
-      expect((budget as any).amount).toBe(5000);
-      expect((budget as any).category_id).toBe(cat1Id);
-    });
-
-    it('should create total budget (no category)', () => {
-      const result = db.prepare(
-        'INSERT INTO budgets (category_id, amount, period, start_date) VALUES (?, ?, ?, ?)'
-      ).run(null, 10000, 'monthly', '2024-01-01');
-
-      const budget = db.prepare('SELECT * FROM budgets WHERE id = ?').get(result.lastInsertRowid) as any;
-      expect(budget).toBeDefined();
-      expect(budget.category_id).toBeNull();
-    });
+    const status = budgetService.getBudgetStatus('2026-01');
+    expect(status[0].spent).toBe(500);
+    expect(status[0].remaining).toBe(1500);
   });
 
-  describe('update', () => {
-    it('should update budget', () => {
-      const result = db.prepare(`
-        INSERT INTO budgets (category_id, amount, period, start_date)
-        VALUES (?, 5000, 'monthly', '2024-01-01')
-      `).run(cat1Id);
+  it('月度预算只统计当月支出', () => {
+    budgetService.create({ amount: 1000, period: 'monthly', start_date: '2026-01-01' });
+    transactionService.create({ type: 'expense', amount: 100, category_id: expenseId, date: '2026-01-15' });
+    transactionService.create({ type: 'expense', amount: 200, category_id: expenseId, date: '2026-02-15' });
 
-      db.prepare('UPDATE budgets SET amount = ? WHERE id = ?').run(6000, result.lastInsertRowid);
-      const budget = db.prepare('SELECT * FROM budgets WHERE id = ?').get(result.lastInsertRowid) as any;
-      expect(budget.amount).toBe(6000);
-    });
-
-    it('should return 0 changes for non-existent budget', () => {
-      const result = db.prepare('UPDATE budgets SET amount = ? WHERE id = ?').run(1000, 999);
-      expect(result.changes).toBe(0);
-    });
-  });
-
-  describe('delete', () => {
-    it('should delete budget', () => {
-      const result = db.prepare(`
-        INSERT INTO budgets (category_id, amount, period, start_date)
-        VALUES (?, 5000, 'monthly', '2024-01-01')
-      `).run(cat1Id);
-
-      const deleteResult = db.prepare('DELETE FROM budgets WHERE id = ?').run(result.lastInsertRowid);
-      expect(deleteResult.changes).toBe(1);
-      expect(db.prepare('SELECT * FROM budgets WHERE id = ?').get(result.lastInsertRowid)).toBeUndefined();
-    });
-
-    it('should return 0 changes for non-existent budget', () => {
-      const result = db.prepare('DELETE FROM budgets WHERE id = ?').run(999);
-      expect(result.changes).toBe(0);
-    });
-  });
-
-  describe('getBudgetStatus', () => {
-    it('should return budget status with spending', () => {
-      const budgetResult = db.prepare(`
-        INSERT INTO budgets (category_id, amount, period, start_date)
-        VALUES (?, 5000, 'monthly', '2024-01-01')
-      `).run(cat1Id);
-
-      db.prepare(`
-        INSERT INTO transactions (type, amount, category_id, note, date)
-        VALUES ('expense', 1500, ?, '餐饮消费', '2024-01-15')
-      `).run(cat1Id);
-
-      const budgets = db.prepare('SELECT * FROM budgets').all();
-      const spent = db.prepare(`
-        SELECT COALESCE(SUM(amount), 0) as total
-        FROM transactions
-        WHERE category_id = ? AND type = 'expense' AND date >= ? AND date <= ?
-      `).get(cat1Id, '2024-01-01', '2024-01-31') as any;
-
-      expect(budgets).toHaveLength(1);
-      expect(spent.total).toBe(1500);
-      expect((budgets[0] as any).amount - spent.total).toBe(3500);
-    });
-
-    it('should return total budget status', () => {
-      db.prepare(`
-        INSERT INTO budgets (category_id, amount, period, start_date)
-        VALUES (NULL, 10000, 'monthly', '2024-01-01')
-      `).run();
-
-      db.prepare(`INSERT INTO transactions (type, amount, category_id, note, date) VALUES (?, ?, ?, ?, ?)`).run('expense', 3000, cat1Id, '餐饮', '2024-01-15');
-      db.prepare(`INSERT INTO transactions (type, amount, category_id, note, date) VALUES (?, ?, ?, ?, ?)`).run('expense', 2000, cat2Id, '交通', '2024-01-16');
-
-      const budgets = db.prepare('SELECT * FROM budgets').all();
-      const spent = db.prepare(`
-        SELECT COALESCE(SUM(amount), 0) as total
-        FROM transactions
-        WHERE type = 'expense' AND date >= ? AND date <= ?
-      `).get('2024-01-01', '2024-01-31') as any;
-
-      expect(budgets).toHaveLength(1);
-      expect(spent.total).toBe(5000);
-      expect((budgets[0] as any).amount - spent.total).toBe(5000);
-    });
-
-    it('should return multiple budget statuses', () => {
-      db.prepare(`INSERT INTO budgets (category_id, amount, period, start_date) VALUES (?, ?, ?, ?)`).run(cat1Id, 5000, 'monthly', '2024-01-01');
-      db.prepare(`INSERT INTO budgets (category_id, amount, period, start_date) VALUES (?, ?, ?, ?)`).run(cat2Id, 2000, 'monthly', '2024-01-01');
-
-      db.prepare(`INSERT INTO transactions (type, amount, category_id, note, date) VALUES (?, ?, ?, ?, ?)`).run('expense', 1000, cat1Id, '餐饮', '2024-01-15');
-      db.prepare(`INSERT INTO transactions (type, amount, category_id, note, date) VALUES (?, ?, ?, ?, ?)`).run('expense', 500, cat2Id, '交通', '2024-01-16');
-
-      const budgets = db.prepare('SELECT * FROM budgets').all();
-      expect(budgets).toHaveLength(2);
-    });
-
-    it('should return zero spending when no transactions', () => {
-      db.prepare(`
-        INSERT INTO budgets (category_id, amount, period, start_date)
-        VALUES (?, 5000, 'monthly', '2024-01-01')
-      `).run(cat1Id);
-
-      const spent = db.prepare(`
-        SELECT COALESCE(SUM(amount), 0) as total
-        FROM transactions
-        WHERE category_id = ? AND type = 'expense' AND date >= ? AND date <= ?
-      `).get(cat1Id, '2024-01-01', '2024-01-31') as any;
-
-      expect(spent.total).toBe(0);
-    });
+    expect(budgetService.getBudgetStatus('2026-01')[0].spent).toBe(100);
+    expect(budgetService.getBudgetStatus('2026-02')[0].spent).toBe(200);
   });
 });

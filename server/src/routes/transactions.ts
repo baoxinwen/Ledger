@@ -1,23 +1,40 @@
 // 交易路由：对外提供收支记录的查询、统计、创建、更新和删除接口。
+// 输入统一走 utils/validation 校验，非法请求抛 HttpError(400)，由全局错误中间件转为 JSON。
 import { Router, Request, Response } from 'express';
 import { transactionService } from '../services/transaction.service';
+import { TransactionFilter } from '../types';
+import {
+  requirePositiveId,
+  optionalPositiveId,
+  requireNonNegativeAmount,
+  optionalNonNegativeAmount,
+  requireDate,
+  optionalDate,
+  optionalString,
+  requireTransactionType,
+  optionalTransactionType,
+  optionalTagIds,
+} from '../utils/validation';
 
 const router = Router();
 
+// 列表单页上限，防止客户端传超大 limit 一次性载入过多数据。
+const MAX_LIST_LIMIT = 1000;
+
 router.get('/', (req: Request, res: Response) => {
-  const filter = {
-    type: req.query.type as 'income' | 'expense' | undefined,
-    category_id: req.query.category_id ? parseInt(req.query.category_id as string) : undefined,
-    tag_id: req.query.tag_id ? parseInt(req.query.tag_id as string) : undefined,
-    start_date: req.query.start_date as string | undefined,
-    end_date: req.query.end_date as string | undefined,
-    min_amount: req.query.min_amount ? parseFloat(req.query.min_amount as string) : undefined,
-    max_amount: req.query.max_amount ? parseFloat(req.query.max_amount as string) : undefined,
-    keyword: req.query.keyword as string | undefined,
-    page: req.query.page ? parseInt(req.query.page as string) : 1,
-    limit: req.query.limit ? parseInt(req.query.limit as string) : 20,
-    sort: req.query.sort as 'date' | 'amount' | undefined,
-    order: req.query.order as 'asc' | 'desc' | undefined,
+  const filter: TransactionFilter = {
+    type: optionalTransactionType(req.query.type),
+    category_id: optionalPositiveId(req.query.category_id, '分类'),
+    tag_id: optionalPositiveId(req.query.tag_id, '标签'),
+    start_date: optionalDate(req.query.start_date),
+    end_date: optionalDate(req.query.end_date),
+    min_amount: optionalNonNegativeAmount(req.query.min_amount, '最小金额'),
+    max_amount: optionalNonNegativeAmount(req.query.max_amount, '最大金额'),
+    keyword: optionalString(req.query.keyword, '搜索关键词', 200),
+    page: optionalPositiveId(req.query.page, '页码') ?? 1,
+    limit: Math.min(optionalPositiveId(req.query.limit, '每页条数') ?? 20, MAX_LIST_LIMIT),
+    sort: req.query.sort === 'amount' ? 'amount' : 'date',
+    order: req.query.order === 'asc' ? 'asc' : 'desc',
   };
 
   const result = transactionService.getAll(filter);
@@ -26,9 +43,9 @@ router.get('/', (req: Request, res: Response) => {
 
 router.get('/stats', (req: Request, res: Response) => {
   const query = {
-    start_date: req.query.start_date as string | undefined,
-    end_date: req.query.end_date as string | undefined,
-    type: req.query.type as 'income' | 'expense' | undefined,
+    start_date: optionalDate(req.query.start_date),
+    end_date: optionalDate(req.query.end_date),
+    type: optionalTransactionType(req.query.type),
   };
 
   const stats = transactionService.getStats(query);
@@ -36,7 +53,7 @@ router.get('/stats', (req: Request, res: Response) => {
 });
 
 router.get('/:id', (req: Request, res: Response) => {
-  const id = parseInt(req.params.id as string);
+  const id = requirePositiveId(req.params.id);
   const transaction = transactionService.getById(id);
   if (!transaction) {
     return res.status(404).json({ error: 'Transaction not found' });
@@ -45,19 +62,25 @@ router.get('/:id', (req: Request, res: Response) => {
 });
 
 router.post('/', (req: Request, res: Response) => {
-  const { type, amount, category_id, note, date, tag_ids } = req.body;
-
-  if (!type || amount === undefined || !category_id || !date) {
-    return res.status(400).json({ error: 'Type, amount, category_id and date are required' });
-  }
+  const type = requireTransactionType(req.body.type);
+  const amount = requireNonNegativeAmount(req.body.amount, '金额');
+  const category_id = requirePositiveId(req.body.category_id, '分类');
+  const date = requireDate(req.body.date);
+  const note = optionalString(req.body.note, '备注');
+  const tag_ids = optionalTagIds(req.body.tag_ids);
 
   const transaction = transactionService.create({ type, amount, category_id, note, date, tag_ids });
   res.status(201).json(transaction);
 });
 
 router.put('/:id', (req: Request, res: Response) => {
-  const id = parseInt(req.params.id as string);
-  const { type, amount, category_id, note, date, tag_ids } = req.body;
+  const id = requirePositiveId(req.params.id);
+  const type = optionalTransactionType(req.body.type);
+  const amount = optionalNonNegativeAmount(req.body.amount, '金额');
+  const category_id = optionalPositiveId(req.body.category_id, '分类');
+  const date = optionalDate(req.body.date);
+  const note = optionalString(req.body.note, '备注');
+  const tag_ids = optionalTagIds(req.body.tag_ids);
 
   const transaction = transactionService.update(id, { type, amount, category_id, note, date, tag_ids });
   if (!transaction) {
@@ -67,7 +90,7 @@ router.put('/:id', (req: Request, res: Response) => {
 });
 
 router.delete('/:id', (req: Request, res: Response) => {
-  const id = parseInt(req.params.id as string);
+  const id = requirePositiveId(req.params.id);
   const success = transactionService.delete(id);
   if (!success) {
     return res.status(404).json({ error: 'Transaction not found' });

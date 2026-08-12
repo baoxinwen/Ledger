@@ -1,4 +1,34 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
+
+const E2E_SETUP_TOKEN = 'e2e-setup-token';
+const E2E_USERNAME = 'admin';
+const E2E_PASSWORD = 'e2e-password';
+
+// 确保当前浏览器上下文已登录：首次运行用初始化 Token 创建账户，之后用固定凭据登录。
+// 并行 worker 下多个用例可能同时初始化，这里通过重试容忍并发竞争。
+async function ensureAuthenticated(page: Page): Promise<void> {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const me = (await (await page.request.get('/api/auth/me')).json()) as {
+      authenticated: boolean;
+      needsSetup: boolean;
+    };
+    if (me.authenticated) return;
+
+    if (me.needsSetup) {
+      const setupResponse = await page.request.post('/api/auth/setup', {
+        data: { token: E2E_SETUP_TOKEN, username: E2E_USERNAME, password: E2E_PASSWORD },
+      });
+      if (setupResponse.ok()) return;
+    } else {
+      const loginResponse = await page.request.post('/api/auth/login', {
+        data: { username: E2E_USERNAME, password: E2E_PASSWORD },
+      });
+      if (loginResponse.ok()) return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+  throw new Error('e2e 初始化/登录失败：请确认后端可访问');
+}
 
 const EDITORIAL_CATEGORY_COLORS = [
   '#5F6F52',
@@ -29,6 +59,7 @@ const EDITORIAL_CATEGORY_COLORS = [
 
 test.describe('个人记账本应用', () => {
   test.beforeEach(async ({ page }) => {
+    await ensureAuthenticated(page);
     await page.goto('/');
     await page.waitForLoadState('networkidle');
   });
@@ -59,9 +90,17 @@ test.describe('个人记账本应用', () => {
       await expect(page.getByRole('button', { name: '记一笔' })).toBeVisible();
     });
 
-    test('点击记一笔应该跳转到收支记录页面', async ({ page }) => {
+    test('点击记一笔应该跳转到收支记录页面并打开新增弹窗', async ({ page }) => {
       await page.getByRole('button', { name: '记一笔' }).click();
       await expect(page).toHaveURL('/transactions');
+      await expect(page.getByRole('dialog')).toBeVisible();
+      await expect(page.getByRole('spinbutton', { name: '金额' })).toBeVisible();
+    });
+
+    test('点击查看账单应该只跳转到收支记录页面', async ({ page }) => {
+      await page.getByRole('button', { name: '查看账单' }).click();
+      await expect(page).toHaveURL('/transactions');
+      await expect(page.getByRole('dialog')).not.toBeVisible();
     });
   });
 
@@ -146,6 +185,44 @@ test.describe('个人记账本应用', () => {
       await expect(page.getByRole('dialog')).not.toBeVisible();
       await expect(page.getByRole('cell', { name: '测试收入' }).first()).toBeVisible();
     });
+
+    test('删除记录前应该显示应用内确认弹窗', async ({ page }) => {
+      await page.route('**/api/transactions**', async (route) => {
+        if (route.request().method() === 'GET') {
+          await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({
+              data: [{
+                id: 999,
+                type: 'expense',
+                amount: 12.34,
+                category_id: 1,
+                category: { id: 1, name: '餐饮', type: 'expense', icon: '🍽️', color: '#8A5A61', is_preset: 1, sort_order: 0 },
+                note: '待删除测试记录',
+                date: '2026-06-23',
+                tags: [],
+                created_at: '2026-06-23T00:00:00.000Z',
+                updated_at: '2026-06-23T00:00:00.000Z',
+              }],
+              total: 1,
+            }),
+          });
+          return;
+        }
+
+        await route.fulfill({ status: 204, body: '' });
+      });
+      await page.goto('/transactions');
+      await page.waitForLoadState('networkidle');
+
+      await expect(page.getByRole('cell', { name: '待删除测试记录', exact: true })).toBeVisible();
+      await page.getByRole('button', { name: '删除待删除测试记录' }).first().click();
+      await expect(page.getByRole('dialog')).toBeVisible();
+      await expect(page.getByText('删除这条记录？')).toBeVisible();
+
+      await page.getByRole('button', { name: '取消' }).click();
+      await expect(page.getByRole('dialog')).not.toBeVisible();
+    });
   });
 
   test.describe('统计分析页面', () => {
@@ -166,9 +243,9 @@ test.describe('个人记账本应用', () => {
     });
 
     test('应该显示收支概览', async ({ page }) => {
-      await expect(page.getByText('总收入')).toBeVisible();
-      await expect(page.getByText('总支出')).toBeVisible();
-      await expect(page.getByText('结余')).toBeVisible();
+      await expect(page.getByText('总收入', { exact: true })).toBeVisible();
+      await expect(page.getByText('总支出', { exact: true })).toBeVisible();
+      await expect(page.getByText('结余', { exact: true })).toBeVisible();
     });
 
     test('应该显示图表', async ({ page }) => {
@@ -224,7 +301,7 @@ test.describe('个人记账本应用', () => {
     });
 
     test('应该显示页面标题', async ({ page }) => {
-      await expect(page.locator('main').getByText('设置')).toBeVisible();
+      await expect(page.getByRole('heading', { name: '设置' })).toBeVisible();
     });
 
     test('应该显示分类管理标签', async ({ page }) => {
@@ -290,6 +367,7 @@ test.describe('统计图表交互优化', () => {
       });
     });
 
+    await ensureAuthenticated(page);
     await page.goto('/statistics');
     await page.waitForLoadState('networkidle');
   });
@@ -344,6 +422,7 @@ test.describe('设置页布局优化', () => {
         body: JSON.stringify([{ id: 1, name: '支付宝' }, { id: 2, name: '微信' }]),
       });
     });
+    await ensureAuthenticated(page);
     await page.goto('/settings');
     await page.waitForLoadState('networkidle');
   });

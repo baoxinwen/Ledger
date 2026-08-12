@@ -18,7 +18,7 @@ import { getMonthRangeForDate, getQuarterRangeForDate, getYearRangeForDate } fro
 import { PageHeader, SectionCard } from '../components/ui';
 
 export default function StatisticsPage() {
-  const { stats, loading, fetchStats } = useTransactionStore();
+  const { stats, statsLoading, fetchStats } = useTransactionStore();
   const { showSnackbar } = useSnackbarStore();
   const [period, setPeriod] = useState('month');
   const [startDate, setStartDate] = useState('');
@@ -125,7 +125,7 @@ export default function StatisticsPage() {
       {/* Charts */}
       {stats ? (
         <StatsCharts stats={stats} />
-      ) : loading ? (
+      ) : statsLoading ? (
         <SectionCard>
             <Box sx={{ textAlign: 'center', py: 8 }}>
               <Typography variant="body1" sx={{ color: 'text.secondary' }}>

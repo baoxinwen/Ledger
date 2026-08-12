@@ -15,6 +15,7 @@ import {
   Edit as EditIcon,
 } from '@mui/icons-material';
 import type { Category } from '../../types';
+import { ConfirmDialog } from '../ui';
 import CategoryFormDialog from './CategoryFormDialog';
 
 interface CategoryManagerProps {
@@ -27,9 +28,19 @@ interface CategoryManagerProps {
 export default function CategoryManager({ categories, onCreate, onUpdate, onDelete }: CategoryManagerProps) {
   const [formOpen, setFormOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Category | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  // 新建分类时预置的类型：从支出/收入区按钮分别进入时对应不同类型。
+  const [defaultType, setDefaultType] = useState<'income' | 'expense'>('expense');
 
   const expenseCategories = categories.filter((c) => c.type === 'expense');
   const incomeCategories = categories.filter((c) => c.type === 'income');
+
+  const openCreate = (type: 'income' | 'expense') => {
+    setEditingCategory(null);
+    setDefaultType(type);
+    setFormOpen(true);
+  };
 
   const handleEdit = (category: Category) => {
     setEditingCategory(category);
@@ -51,13 +62,21 @@ export default function CategoryManager({ categories, onCreate, onUpdate, onDele
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (window.confirm('确定要删除这个分类吗？')) {
-      try {
-        await onDelete(id);
-      } catch (err) {
-        console.error('Failed to delete category:', err);
-      }
+  const handleDelete = (category: Category) => {
+    setDeleteTarget(category);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+
+    try {
+      setDeleting(true);
+      await onDelete(deleteTarget.id);
+      setDeleteTarget(null);
+    } catch (err) {
+      console.error('Failed to delete category:', err);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -78,19 +97,14 @@ export default function CategoryManager({ categories, onCreate, onUpdate, onDele
             {cats.length} 个分类
           </Typography>
         </Box>
-        {cats === expenseCategories && (
-          <Button
-            startIcon={<AddIcon />}
-            variant="outlined"
-            sx={{ height: 40, flexShrink: 0 }}
-            onClick={() => {
-              setEditingCategory(null);
-              setFormOpen(true);
-            }}
-          >
-            新增分类
-          </Button>
-        )}
+        <Button
+          startIcon={<AddIcon />}
+          variant="outlined"
+          sx={{ height: 40, flexShrink: 0 }}
+          onClick={() => openCreate(cats === expenseCategories ? 'expense' : 'income')}
+        >
+          新增分类
+        </Button>
       </Box>
 
       <Grid container spacing={2}>
@@ -123,7 +137,7 @@ export default function CategoryManager({ categories, onCreate, onUpdate, onDele
                         <IconButton size="small" onClick={() => handleEdit(cat)} aria-label={`编辑${cat.name}`}>
                           <EditIcon />
                         </IconButton>
-                        <IconButton size="small" onClick={() => handleDelete(cat.id)} aria-label={`删除${cat.name}`}>
+                        <IconButton size="small" onClick={() => handleDelete(cat)} aria-label={`删除${cat.name}`}>
                           <DeleteIcon />
                         </IconButton>
                       </>
@@ -146,12 +160,28 @@ export default function CategoryManager({ categories, onCreate, onUpdate, onDele
       <CategoryFormDialog
         open={formOpen}
         category={editingCategory}
+        defaultType={defaultType}
         categories={categories}
         onClose={() => {
           setFormOpen(false);
           setEditingCategory(null);
         }}
         onSubmit={handleSubmit}
+      />
+
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="删除这个分类？"
+        description={
+          deleteTarget
+            ? `将删除「${deleteTarget.name}」分类。此操作无法恢复。`
+            : undefined
+        }
+        loading={deleting}
+        onCancel={() => {
+          if (!deleting) setDeleteTarget(null);
+        }}
+        onConfirm={handleConfirmDelete}
       />
     </Box>
   );

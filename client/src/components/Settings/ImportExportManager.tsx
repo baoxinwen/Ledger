@@ -196,11 +196,15 @@ export default function ImportExportManager({ onImportComplete }: ImportExportMa
 }
 
 function logImportDiagnostics(filename: string, result: ImportResult): void {
-  // 浏览器控制台保留完整诊断，页面只展示前几条，避免长账单把界面撑得太高。
+  // 浏览器控制台保留诊断，但剥离原始账单行与订单号等敏感字段，避免他人打开 devtools 看到完整第三方账单。
+  const sanitized: ImportResult = {
+    ...result,
+    diagnostics: result.diagnostics?.map(({ raw, source_transaction_id, source_merchant_order_id, ...rest }) => rest),
+  };
   console.groupCollapsed(`[账单导入] ${filename}`);
-  console.info('导入汇总', result);
-  if (result.diagnostics?.length) {
-    console.table(result.diagnostics);
+  console.info('导入汇总', sanitized);
+  if (sanitized.diagnostics?.length) {
+    console.table(sanitized.diagnostics);
   }
   console.groupEnd();
 }

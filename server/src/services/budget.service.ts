@@ -1,6 +1,7 @@
 // 预算服务负责预算持久化和月度/年度预算执行金额计算。
 import db from '../database';
 import { Budget } from '../types';
+import { roundToCents } from '../utils/amount';
 
 export class BudgetService {
   getAll(): Budget[] {
@@ -46,34 +47,41 @@ export class BudgetService {
 
   getBudgetStatus(month: string): { budget: Budget; spent: number; remaining: number }[] {
     const budgets = this.getAll();
-    const year = month.substring(0, 4);
+    const queryYear = month.substring(0, 4);
 
     return budgets.map(budget => {
-      const { startDate, endDate } = budget.period === 'yearly'
-        ? { startDate: `${year}-01-01`, endDate: `${year}-12-31` }
+      const isYearly = budget.period === 'yearly';
+      // 年度预算归属 start_date 所在自然年，而不是查询月份所在年，避免跨年误报。
+      const budgetYear = budget.start_date.substring(0, 4);
+      const { startDate, endDate } = isYearly
+        ? { startDate: `${budgetYear}-01-01`, endDate: `${budgetYear}-12-31` }
         : getMonthRange(month);
       let spent = 0;
 
-      if (budget.category_id) {
-        const result = db.prepare(`
-          SELECT COALESCE(SUM(amount), 0) as total
-          FROM transactions
-          WHERE category_id = ? AND type = 'expense' AND date >= ? AND date <= ?
-        `).get(budget.category_id, startDate, endDate) as { total: number };
-        spent = result.total;
-      } else {
-        const result = db.prepare(`
-          SELECT COALESCE(SUM(amount), 0) as total
-          FROM transactions
-          WHERE type = 'expense' AND date >= ? AND date <= ?
-        `).get(startDate, endDate) as { total: number };
-        spent = result.total;
+      // 年度预算只在其所属自然年内生效：查询其他年份时不计入该预算的支出。
+      if (!isYearly || queryYear === budgetYear) {
+        if (budget.category_id) {
+          const result = db.prepare(`
+            SELECT COALESCE(SUM(amount), 0) as total
+            FROM transactions
+            WHERE category_id = ? AND type = 'expense' AND date >= ? AND date <= ?
+          `).get(budget.category_id, startDate, endDate) as { total: number };
+          spent = result.total;
+        } else {
+          const result = db.prepare(`
+            SELECT COALESCE(SUM(amount), 0) as total
+            FROM transactions
+            WHERE type = 'expense' AND date >= ? AND date <= ?
+          `).get(startDate, endDate) as { total: number };
+          spent = result.total;
+        }
       }
 
+      const spentRounded = roundToCents(spent);
       return {
         budget,
-        spent,
-        remaining: budget.amount - spent,
+        spent: spentRounded,
+        remaining: roundToCents(budget.amount - spentRounded),
       };
     });
   }

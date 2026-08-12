@@ -33,7 +33,7 @@ import { useSettingsStore } from '../stores/settingsStore';
 import { useZonedToday } from '../hooks/useZonedToday';
 import type { Budget, BudgetStatus } from '../types';
 import { formatAmount, calculatePercentage } from '../utils/format';
-import { EmptyState, MetricCard, PageHeader } from '../components/ui';
+import { ConfirmDialog, EmptyState, MetricCard, PageHeader } from '../components/ui';
 
 /** 预算管理页面 */
 export default function BudgetsPage() {
@@ -42,6 +42,8 @@ export default function BudgetsPage() {
   const [budgetStatuses, setBudgetStatuses] = useState<BudgetStatus[]>([]);
   const [formOpen, setFormOpen] = useState(false);
   const [editingBudget, setEditingBudget] = useState<Budget | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<BudgetStatus | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const timeZone = useSettingsStore((state) => state.settings.time_zone);
   const today = useZonedToday(timeZone);
   const currentMonth = today.substring(0, 7);
@@ -79,10 +81,15 @@ export default function BudgetsPage() {
 
   /** 提交预算表单（新增/编辑） */
   const handleSubmit = async () => {
+    const amount = parseFloat(formData.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      showSnackbar('请输入有效的预算金额（大于 0）', 'error');
+      return;
+    }
     try {
       const data = {
         category_id: formData.category_id || undefined,
-        amount: parseFloat(formData.amount),
+        amount,
         period: formData.period,
         start_date: formData.start_date,
       };
@@ -117,17 +124,26 @@ export default function BudgetsPage() {
     setFormOpen(true);
   };
 
-  /** 删除预算 */
-  const handleDelete = async (id: number) => {
-    if (window.confirm('确定要删除这个预算吗？')) {
-      try {
-        await budgetApi.delete(id);
-        showSnackbar('预算删除成功', 'success');
-        loadBudgets();
-      } catch (error) {
-        console.error('删除预算失败:', error);
-        showSnackbar('删除预算失败', 'error');
-      }
+  /** 打开预算删除确认弹窗，真正删除在确认按钮里执行。 */
+  const handleDelete = (status: BudgetStatus) => {
+    setDeleteTarget(status);
+  };
+
+  /** 确认删除预算 */
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+
+    try {
+      setDeleting(true);
+      await budgetApi.delete(deleteTarget.budget.id);
+      showSnackbar('预算删除成功', 'success');
+      setDeleteTarget(null);
+      loadBudgets();
+    } catch (error) {
+      console.error('删除预算失败:', error);
+      showSnackbar('删除预算失败', 'error');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -271,10 +287,10 @@ export default function BudgetsPage() {
                       </Typography>
                     </Box>
                     <Box>
-                      <IconButton size="small" onClick={() => handleEdit(status.budget)}>
+                      <IconButton size="small" aria-label={`编辑${getCategoryName(status.budget)}预算`} onClick={() => handleEdit(status.budget)}>
                         <EditIcon fontSize="small" />
                       </IconButton>
-                      <IconButton size="small" onClick={() => handleDelete(status.budget.id)}>
+                      <IconButton size="small" onClick={() => handleDelete(status)} aria-label={`删除${getCategoryName(status.budget)}预算`}>
                         <DeleteIcon fontSize="small" />
                       </IconButton>
                     </Box>
@@ -423,6 +439,21 @@ export default function BudgetsPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="删除这个预算？"
+        description={
+          deleteTarget
+            ? `将删除「${getCategoryName(deleteTarget.budget)}」预算。此操作无法恢复。`
+            : undefined
+        }
+        loading={deleting}
+        onCancel={() => {
+          if (!deleting) setDeleteTarget(null);
+        }}
+        onConfirm={handleConfirmDelete}
+      />
     </Box>
   );
 }

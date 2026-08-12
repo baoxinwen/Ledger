@@ -1,6 +1,9 @@
 // MUI 主题集中定义应用色彩、字体和组件默认视觉风格。
 import { createTheme } from '@mui/material/styles';
 
+// 设计品味常量（参考 emilkowalski/skills）：UI 交互用强 ease-out 而非默认弱缓动，让反馈更即时。
+const EASE_OUT = 'cubic-bezier(0.23, 1, 0.32, 1)';
+
 // Neo-Brutalist × Financial Times aesthetic
 // Deep ink backgrounds, gold accents, editorial typography
 
@@ -116,6 +119,12 @@ export const lightTheme = createTheme({
         '@global': {
           // Fonts loaded via <link> in index.html for reliable loading
         },
+        '@media (prefers-reduced-motion: reduce)': {
+          '*': {
+            transition: 'none !important',
+            animation: 'none !important',
+          },
+        },
       },
     },
     MuiCard: {
@@ -124,7 +133,7 @@ export const lightTheme = createTheme({
           boxShadow: 'none',
           border: '1px solid #e5e2db',
           borderRadius: 2,
-          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+          transition: `transform 200ms ${EASE_OUT}, border-color 200ms ease, box-shadow 200ms ease`,
           '&:hover': {
             borderColor: '#c9a84c',
             boxShadow: '0 4px 24px rgba(201, 168, 76, 0.08)',
@@ -140,6 +149,10 @@ export const lightTheme = createTheme({
           padding: '9px 20px',
           fontWeight: 600,
           boxShadow: 'none',
+          transition: `transform 160ms ${EASE_OUT}`,
+          '&:active': {
+            transform: 'scale(0.98)',
+          },
           '&:hover': {
             boxShadow: 'none',
           },
@@ -165,6 +178,10 @@ export const lightTheme = createTheme({
       styleOverrides: {
         root: {
           borderRadius: 2,
+          transition: `transform 160ms ${EASE_OUT}`,
+          '&:active': {
+            transform: 'scale(0.94)',
+          },
           '&:focus-visible': {
             outline: '2px solid #c9a84c',
             outlineOffset: 2,
@@ -364,6 +381,12 @@ export const darkTheme = createTheme({
         '@global': {
           // Fonts loaded via <link> in index.html for reliable loading
         },
+        '@media (prefers-reduced-motion: reduce)': {
+          '*': {
+            transition: 'none !important',
+            animation: 'none !important',
+          },
+        },
       },
     },
     MuiCard: {
@@ -372,7 +395,7 @@ export const darkTheme = createTheme({
           boxShadow: 'none',
           border: '1px solid #1f1f2e',
           borderRadius: 2,
-          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+          transition: `transform 200ms ${EASE_OUT}, border-color 200ms ease, box-shadow 200ms ease`,
           '&:hover': {
             borderColor: '#c9a84c',
             boxShadow: '0 4px 24px rgba(201, 168, 76, 0.05)',
@@ -388,6 +411,10 @@ export const darkTheme = createTheme({
           padding: '9px 20px',
           fontWeight: 600,
           boxShadow: 'none',
+          transition: `transform 160ms ${EASE_OUT}`,
+          '&:active': {
+            transform: 'scale(0.98)',
+          },
           '&:hover': {
             boxShadow: 'none',
           },
@@ -413,6 +440,10 @@ export const darkTheme = createTheme({
       styleOverrides: {
         root: {
           borderRadius: 2,
+          transition: `transform 160ms ${EASE_OUT}`,
+          '&:active': {
+            transform: 'scale(0.94)',
+          },
           '&:focus-visible': {
             outline: '2px solid #c9a84c',
             outlineOffset: 2,

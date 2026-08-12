@@ -14,9 +14,36 @@ env:
   IMAGE_NAME: ghcr.io/baoxinwen/ledger
 
 jobs:
+  test:
+    name: Run tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install and test server
+        working-directory: server
+        run: |
+          npm ci
+          npm test
+
+      - name: Install, test and build client
+        working-directory: client
+        run: |
+          npm ci
+          npm test
+          npm run build
+
   build:
     name: Build and publish
     runs-on: ubuntu-latest
+    needs: test
 
     steps:
       - name: Checkout

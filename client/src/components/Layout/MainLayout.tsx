@@ -6,6 +6,7 @@ import {
   Toolbar,
   Typography,
   IconButton,
+  Tooltip,
   Tabs,
   Tab,
   useTheme,
@@ -26,9 +27,12 @@ import {
   AccountBalanceWallet,
   Settings,
   Menu as MenuIcon,
+  Logout,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Logo from './Logo';
+import { useAuthStore } from '../../stores/authStore';
+import { useSnackbarStore } from '../../stores/snackbarStore';
 
 const DRAWER_WIDTH = 260;
 
@@ -52,8 +56,13 @@ export default function MainLayout({ children, isDarkMode, onThemeToggle }: Main
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [mobileOpen, setMobileOpen] = useState(false);
+  const logout = useAuthStore((state) => state.logout);
+  const showSnackbar = useSnackbarStore((state) => state.showSnackbar);
 
-  const currentTab = navItems.findIndex((item) => item.path === location.pathname);
+  // 前缀匹配：/transactions/ 这类带尾斜杠或嵌套路径也应高亮对应 tab；首页只在精确命中时高亮。
+  const currentTab = navItems.findIndex((item) =>
+    item.path === '/' ? location.pathname === '/' : location.pathname.startsWith(item.path)
+  );
 
   const handleTabChange = (_: React.SyntheticEvent, newValue: number) => {
     navigate(navItems[newValue].path);
@@ -66,6 +75,15 @@ export default function MainLayout({ children, isDarkMode, onThemeToggle }: Main
   const handleNavClick = (path: string) => {
     navigate(path);
     setMobileOpen(false);
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate('/');
+    } catch (error) {
+      showSnackbar('退出登录失败，请检查网络', 'error');
+    }
   };
 
   const currentPage = navItems.find((item) => item.path === location.pathname);
@@ -111,6 +129,7 @@ export default function MainLayout({ children, isDarkMode, onThemeToggle }: Main
           {isMobile && (
             <IconButton
               color="inherit"
+              aria-label="打开导航菜单"
               onClick={handleDrawerToggle}
               sx={{ mr: 1 }}
             >
@@ -170,23 +189,39 @@ export default function MainLayout({ children, isDarkMode, onThemeToggle }: Main
             </Typography>
           )}
 
-          {/* Theme toggle */}
-          <IconButton
-            onClick={onThemeToggle}
-            sx={{
-              ml: 'auto',
-              border: '1px solid',
-              borderColor: 'divider',
-              borderRadius: 1,
-              p: 1,
-            }}
-          >
-            {isDarkMode ? (
-              <Brightness7 sx={{ fontSize: 18, color: 'secondary.main' }} />
-            ) : (
-              <Brightness4 sx={{ fontSize: 18 }} />
-            )}
-          </IconButton>
+          {/* Logout + Theme toggle */}
+          <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Tooltip title="退出登录">
+              <IconButton
+                aria-label="退出登录"
+                onClick={handleLogout}
+                sx={{
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderRadius: 1,
+                  p: 1,
+                }}
+              >
+                <Logout sx={{ fontSize: 18 }} />
+              </IconButton>
+            </Tooltip>
+            <IconButton
+              aria-label="切换主题"
+              onClick={onThemeToggle}
+              sx={{
+                border: '1px solid',
+                borderColor: 'divider',
+                borderRadius: 1,
+                p: 1,
+              }}
+            >
+              {isDarkMode ? (
+                <Brightness7 sx={{ fontSize: 18, color: 'secondary.main' }} />
+              ) : (
+                <Brightness4 sx={{ fontSize: 18 }} />
+              )}
+            </IconButton>
+          </Box>
         </Toolbar>
       </AppBar>
 

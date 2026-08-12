@@ -6,7 +6,8 @@ jest.mock('../../database', () => ({
 
 import db from '../setup';
 import iconv from 'iconv-lite';
-import { billImportService, parseAlipayBill, parseWechatBill } from '../../services/billImport.service';
+import { deflateRawSync } from 'zlib';
+import { billImportService, parseAlipayBill, parseWechatBill, parseImportedFile, parseStandardJson, parseStandardCsv, extractZipFiles, isUniqueConstraintError } from '../../services/billImport.service';
 import { EDITORIAL_CATEGORY_PALETTE } from '../../utils/categoryColor';
 
 describe('BillImportService', () => {
@@ -170,6 +171,76 @@ describe('BillImportService', () => {
       expect.objectContaining({ level: 'error', outcome: 'failed', row: 2, reason: '金额无法解析；分类为空；日期格式无效，应为 YYYY-MM-DD' }),
     ]);
   });
+
+  it('rejects XLSX entries whose decompressed size exceeds the limit (zip bomb protection)', () => {
+    // 64MB 全零经 deflate 后仅 ~64KB，属于典型高压缩比攻击载荷。
+    const bombXml = Buffer.alloc(64 * 1024 * 1024, 0);
+    const zip = createDeflatedZip('xl/worksheets/sheet1.xml', bombXml);
+    expect(() => parseWechatBill(zip)).toThrow();
+  });
+
+  it('rejects XLSX whose cumulative decompressed size exceeds the budget (aggregate zip bomb)', () => {
+    const bombXml = Buffer.alloc(64 * 1024, 0); // 64KB，经 deflate 后很小
+    const zip = createDeflatedZip('xl/worksheets/sheet1.xml', bombXml);
+    // 用较小预算验证聚合总量上限逻辑。
+    expect(() => extractZipFiles(zip, { maxTotalBytes: 1024 })).toThrow('解压后体积过大');
+  });
+
+  it('rejects XLSX with too many entries', () => {
+    const files: Record<string, string> = {};
+    for (let index = 0; index < 10; index++) {
+      files[`entry${index}.bin`] = 'x';
+    }
+    const zip = createZip(files);
+    expect(() => extractZipFiles(zip, { maxEntries: 5 })).toThrow('条目过多');
+  });
+
+  it('supports UTF-8 encoded Alipay CSV (auto detect and parse with the detected encoding)', () => {
+    const csv = [
+      '交易时间,交易分类,交易对方,对方账号,商品说明,收/支,金额,收/付款方式,交易状态,交易订单号,商家订单号,备注,',
+      '2018-12-31 17:16:48,餐饮美食,店铺,/,奶茶,支出,9.68,余额,交易成功,utf8-order-1,merchant-1,,',
+    ].join('\n');
+    const buffer = Buffer.from(csv, 'utf8');
+
+    const parsed = parseImportedFile(buffer, 'alipay.csv', 'auto');
+    expect(parsed.source).toBe('alipay');
+    expect(parsed.transactions).toHaveLength(1);
+    expect(parsed.transactions[0].source_transaction_id).toBe('utf8-order-1');
+    expect(parsed.transactions[0].category).toBe('餐饮美食');
+  });
+
+  it('标准导入对未知类型报错而不是静默转成支出', () => {
+    // 经 parseStandardJson 走 normalizeStandardTransaction：未知类型应保留原文交校验报错，而非被静默转成 expense。
+    const transactions = parseStandardJson(
+      JSON.stringify([{ type: 'INCOME', amount: 100, category: '工资', date: '2026-01-01' }])
+    );
+    expect(transactions[0].type).toBe('INCOME');
+
+    const result = billImportService.importTransactions(transactions);
+    expect(result.failed).toBe(1);
+    expect(result.errors[0]).toContain('类型必须是收入或支出');
+  });
+
+  it('isUniqueConstraintError 只匹配 UNIQUE 冲突，不把外键失败误判为重复', () => {
+    expect(isUniqueConstraintError(new Error('UNIQUE constraint failed: tags.name'))).toBe(true);
+    expect(isUniqueConstraintError(new Error('FOREIGN KEY constraint failed'))).toBe(false);
+    expect(isUniqueConstraintError(new Error('other error'))).toBe(false);
+  });
+
+  it('标准 CSV 表头带前缀（如“交易日期”“交易类型”）时仍能正确解析', () => {
+    const csv = [
+      '交易日期,交易类型,交易分类,金额(元),备注',
+      '2026-01-01,支出,餐饮,12.5,午餐',
+    ].join('\n');
+
+    const transactions = parseStandardCsv(csv);
+    expect(transactions).toHaveLength(1);
+    expect(transactions[0].type).toBe('expense');
+    expect(transactions[0].date).toBe('2026-01-01');
+    expect(transactions[0].category).toBe('餐饮');
+    expect(transactions[0].amount).toBe(12.5);
+    expect(transactions[0].note).toBe('午餐');
+  });
 });
 
 function createMinimalXlsx(rows: string[][]): Buffer {
@@ -234,6 +305,49 @@ function createZip(files: Record<string, string>): Buffer {
   end.writeUInt32LE(centralDirectoryOffset, 16);
 
   return Buffer.concat([...localParts, centralDirectory, end]);
+}
+
+// 构造单个 deflate 压缩条目的最小 ZIP（用于测试高压缩比/zip bomb 场景）。
+function createDeflatedZip(name: string, content: Buffer): Buffer {
+  const nameBuffer = Buffer.from(name);
+  const data = deflateRawSync(content);
+
+  const localHeader = Buffer.alloc(30);
+  localHeader.writeUInt32LE(0x04034b50, 0);
+  localHeader.writeUInt16LE(20, 4);
+  localHeader.writeUInt16LE(0, 6);
+  localHeader.writeUInt16LE(8, 8);
+  localHeader.writeUInt32LE(0, 14);
+  localHeader.writeUInt32LE(data.length, 18);
+  localHeader.writeUInt32LE(content.length, 22);
+  localHeader.writeUInt16LE(nameBuffer.length, 26);
+  localHeader.writeUInt16LE(0, 28);
+  const local = Buffer.concat([localHeader, nameBuffer, data]);
+
+  const centralHeader = Buffer.alloc(46);
+  centralHeader.writeUInt32LE(0x02014b50, 0);
+  centralHeader.writeUInt16LE(20, 4);
+  centralHeader.writeUInt16LE(20, 6);
+  centralHeader.writeUInt16LE(0, 8);
+  centralHeader.writeUInt16LE(8, 10);
+  centralHeader.writeUInt32LE(0, 16);
+  centralHeader.writeUInt32LE(data.length, 20);
+  centralHeader.writeUInt32LE(content.length, 24);
+  centralHeader.writeUInt16LE(nameBuffer.length, 28);
+  centralHeader.writeUInt16LE(0, 30);
+  centralHeader.writeUInt16LE(0, 32);
+  centralHeader.writeUInt32LE(0, 42);
+  const central = Buffer.concat([centralHeader, nameBuffer]);
+  const centralOffset = local.length;
+
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(1, 8);
+  end.writeUInt16LE(1, 10);
+  end.writeUInt32LE(central.length, 12);
+  end.writeUInt32LE(centralOffset, 16);
+
+  return Buffer.concat([local, central, end]);
 }
 
 function columnName(index: number): string {

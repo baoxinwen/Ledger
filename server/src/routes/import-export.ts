@@ -3,6 +3,8 @@ import { Router, Request, Response } from 'express';
 import { transactionService } from '../services/transaction.service';
 import { billImportService, FileImportSource } from '../services/billImport.service';
 import { ImportableTransaction } from '../types';
+import { logger } from '../utils/logger';
+import { buildLedgerCsv } from '../utils/csv';
 
 const router = Router();
 
@@ -10,18 +12,14 @@ const router = Router();
 router.get('/export', (req: Request, res: Response) => {
   const format = (req.query.format as 'json' | 'csv') || 'json';
 
-  const { data } = transactionService.getAll({ limit: 10000 });
+  // 导出走完整备份语义，不分页，避免超过默认 limit 时静默截断。
+  const data = transactionService.getAllForExport();
 
   if (format === 'csv') {
-    const header = '日期,类型,分类,金额,标签,备注\n';
-    const rows = data.map(t => {
-      const tags = t.tags.map(tag => tag.name).join(';');
-      return `${t.date},${t.type},${t.category.name},${t.amount},${tags},${t.note || ''}`;
-    }).join('\n');
-
-    res.setHeader('Content-Type', 'text/csv');
+    const content = buildLedgerCsv(data);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename=ledger-export.csv');
-    res.send(header + rows);
+    res.send(content);
   } else {
     const exportData = {
       transactions: data.map(t => ({
@@ -159,10 +157,22 @@ async function parseMultipartRequest(req: Request): Promise<MultipartUpload> {
   return upload;
 }
 
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 账单上传文件上限 50MB
+
+// 流式收集请求体并限制总大小，防止超大上传耗尽内存。
 function readRequestBody(req: Request): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on('data', (chunk: Buffer) => chunks.push(chunk));
+    let received = 0;
+    req.on('data', (chunk: Buffer) => {
+      received += chunk.length;
+      if (received > MAX_UPLOAD_BYTES) {
+        reject(new Error(`上传文件过大，最大支持 ${MAX_UPLOAD_BYTES / 1024 / 1024}MB`));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
     req.on('end', () => resolve(Buffer.concat(chunks)));
     req.on('error', reject);
   });
@@ -184,18 +194,12 @@ function normalizeSource(value: string | undefined): FileImportSource {
 }
 
 function logImportEvent(message: string, details: Record<string, unknown>, level: 'info' | 'error' = 'info'): void {
-  const payload = {
-    time: new Date().toISOString(),
-    level,
-    scope: 'import',
-    message,
-    ...details,
-  };
-  const line = JSON.stringify(payload);
+  // 结构化输出：开发环境打印元数据，生产环境 winston 展开为扁平 JSON 字段，便于采集检索。
+  const payload = { scope: 'import', ...details };
   if (level === 'error') {
-    console.error(line);
+    logger.error(message, payload);
   } else {
-    console.log(line);
+    logger.info(message, payload);
   }
 }
 

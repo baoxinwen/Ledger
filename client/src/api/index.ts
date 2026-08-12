@@ -11,17 +11,31 @@ import type {
   AppSettings,
   ImportFileSource,
   ImportResult,
+  AuthUser,
+  AuthStatus,
 } from '../types';
 
 const api = axios.create({
   baseURL: '/api',
 });
 
+// 供 authStore 注册 401 拦截器（登录过期时自动回到登录页）。
+export { api as http };
+
+export const authApi = {
+  me: () =>
+    api.get<AuthStatus>('/auth/me'),
+  setup: (data: { token: string; username: string; password: string }) =>
+    api.post<{ user: AuthUser }>('/auth/setup', data),
+  login: (data: { username: string; password: string }) =>
+    api.post<{ user: AuthUser }>('/auth/login', data),
+  logout: () =>
+    api.post<{ ok: boolean }>('/auth/logout'),
+};
+
 export const transactionApi = {
   getAll: (filter: TransactionFilter = {}) =>
     api.get<{ data: TransactionWithDetails[]; total: number }>('/transactions', { params: filter }),
-  getById: (id: number) =>
-    api.get<TransactionWithDetails>(`/transactions/${id}`),
   create: (data: { type: 'income' | 'expense'; amount: number; category_id: number; note?: string; date: string; tag_ids?: number[] }) =>
     api.post<TransactionWithDetails>('/transactions', data),
   update: (id: number, data: Partial<TransactionWithDetails>) =>
