@@ -1,25 +1,36 @@
 // 预算路由：负责预算 CRUD 以及预算执行状态查询。
 import { Router, Request, Response } from 'express';
 import { budgetService } from '../services/budget.service';
+import { HttpError } from '../utils/errors';
+import {
+  requirePositiveId,
+  optionalPositiveId,
+  requireNonNegativeAmount,
+  optionalNonNegativeAmount,
+  requireDate,
+  optionalDate,
+  requireBudgetPeriod,
+  optionalBudgetPeriod,
+} from '../utils/validation';
 
 const router = Router();
 
-router.get('/', (req: Request, res: Response) => {
+router.get('/', (_req: Request, res: Response) => {
   const budgets = budgetService.getAll();
   res.json(budgets);
 });
 
 router.get('/status', (req: Request, res: Response) => {
-  const month = req.query.month as string;
-  if (!month) {
-    return res.status(400).json({ error: 'Month is required (YYYY-MM format)' });
+  const month = typeof req.query.month === 'string' ? req.query.month : '';
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+    return res.status(400).json({ error: '月份格式无效，应为 YYYY-MM' });
   }
   const status = budgetService.getBudgetStatus(month);
   res.json(status);
 });
 
 router.get('/:id', (req: Request, res: Response) => {
-  const id = parseInt(req.params.id as string);
+  const id = requirePositiveId(req.params.id);
   const budget = budgetService.getById(id);
   if (!budget) {
     return res.status(404).json({ error: 'Budget not found' });
@@ -28,19 +39,27 @@ router.get('/:id', (req: Request, res: Response) => {
 });
 
 router.post('/', (req: Request, res: Response) => {
-  const { category_id, amount, period, start_date } = req.body;
-
-  if (!amount || !period || !start_date) {
-    return res.status(400).json({ error: 'Amount, period and start_date are required' });
+  const category_id = optionalPositiveId(req.body.category_id, '分类');
+  const amount = requireNonNegativeAmount(req.body.amount, '预算金额');
+  if (amount <= 0) {
+    throw new HttpError(400, '预算金额必须大于 0');
   }
+  const period = requireBudgetPeriod(req.body.period);
+  const start_date = requireDate(req.body.start_date);
 
   const budget = budgetService.create({ category_id, amount, period, start_date });
   res.status(201).json(budget);
 });
 
 router.put('/:id', (req: Request, res: Response) => {
-  const id = parseInt(req.params.id as string);
-  const { category_id, amount, period, start_date } = req.body;
+  const id = requirePositiveId(req.params.id);
+  const category_id = optionalPositiveId(req.body.category_id, '分类');
+  const amount = optionalNonNegativeAmount(req.body.amount, '预算金额');
+  if (amount !== undefined && amount <= 0) {
+    throw new HttpError(400, '预算金额必须大于 0');
+  }
+  const period = optionalBudgetPeriod(req.body.period);
+  const start_date = optionalDate(req.body.start_date);
 
   const budget = budgetService.update(id, { category_id, amount, period, start_date });
   if (!budget) {
@@ -50,7 +69,7 @@ router.put('/:id', (req: Request, res: Response) => {
 });
 
 router.delete('/:id', (req: Request, res: Response) => {
-  const id = parseInt(req.params.id as string);
+  const id = requirePositiveId(req.params.id);
   const success = budgetService.delete(id);
   if (!success) {
     return res.status(404).json({ error: 'Budget not found' });

@@ -111,7 +111,8 @@ export function isLegacyDefaultCategoryColor(color: string | null | undefined): 
   return normalized ? OLD_AUTO_COLORS.has(normalized) : false;
 }
 
-export function pickCategoryColor(type: CategoryColorType, name: string, usedColors: Set<string>): string {
+// 第一个参数是“作用域”种子（income/expense/chart，客户端图表也复用此函数），保证同一名称稳定取色。
+export function pickCategoryColor(type: string, name: string, usedColors: Set<string>): string {
   const seed = hashString(`${type}:${name || '未命名分类'}`);
   for (let offset = 0; offset < EDITORIAL_CATEGORY_PALETTE.length; offset++) {
     const color = EDITORIAL_CATEGORY_PALETTE[(seed + offset) % EDITORIAL_CATEGORY_PALETTE.length];

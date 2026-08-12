@@ -17,6 +17,7 @@ import {
 import type { TransactionWithDetails, Category, Tag } from '../types';
 import { useFormMemoryStore } from '../stores/formMemoryStore';
 import { useSettingsStore } from '../stores/settingsStore';
+import { useSnackbarStore } from '../stores/snackbarStore';
 import { useZonedToday } from '../hooks/useZonedToday';
 
 interface TransactionFormProps {
@@ -41,6 +42,7 @@ export default function TransactionForm({
   const { transactionForm, setTransactionForm } = useFormMemoryStore();
   const timeZone = useSettingsStore((state) => state.settings.time_zone);
   const today = useZonedToday(timeZone);
+  const showSnackbar = useSnackbarStore((state) => state.showSnackbar);
   const [type, setType] = useState<'income' | 'expense'>(transactionForm.type);
   const [amount, setAmount] = useState('');
   const [categoryId, setCategoryId] = useState<number | ''>(transactionForm.category_id || '');
@@ -68,12 +70,24 @@ export default function TransactionForm({
 
   const filteredCategories = categories.filter((c) => c.type === type);
 
+  // 切换收支类型后，若当前选中的分类不属于新类型则清空，避免“收入交易配支出分类”这类错配提交。
+  const handleTypeChange = (value: 'income' | 'expense') => {
+    setType(value);
+    const stillValid = categories.some((c) => c.type === value && c.id === categoryId);
+    if (!stillValid) setCategoryId('');
+  };
+
   const handleSubmit = async () => {
     if (!amount || !categoryId || !date) return;
+    const parsedAmount = parseFloat(amount);
+    if (!Number.isFinite(parsedAmount) || parsedAmount < 0) {
+      showSnackbar('请输入有效的非负金额', 'error');
+      return;
+    }
 
     await onSubmit({
       type,
-      amount: parseFloat(amount),
+      amount: parsedAmount,
       category_id: categoryId,
       note: note || undefined,
       date,
@@ -90,11 +104,22 @@ export default function TransactionForm({
     onClose();
   };
 
-  const handleCreateTag = async (name: string) => {
-    const newTag = await onCreateTag(name);
-    if (newTag) {
-      setSelectedTags([...selectedTags, newTag]);
+  // 仅在用户提交（选择已有标签或回车创建新标签）时按完整名称解析标签，
+  // 避免 MUI Autocomplete 的 onInputChange 逐键触发导致垃圾标签入库。
+  const handleTagChange = async (value: Array<string | Tag>) => {
+    const nextTags: Tag[] = [];
+    for (const item of value) {
+      if (typeof item === 'string') {
+        const name = item.trim();
+        if (!name) continue;
+        const existing = tags.find((tag) => tag.name === name);
+        const tag = existing || await onCreateTag(name);
+        if (tag) nextTags.push(tag);
+      } else {
+        nextTags.push(item);
+      }
     }
+    setSelectedTags(nextTags);
   };
 
   return (
@@ -105,7 +130,7 @@ export default function TransactionForm({
           <ToggleButtonGroup
             value={type}
             exclusive
-            onChange={(_, value) => value && setType(value)}
+            onChange={(_, value) => value && handleTypeChange(value)}
             fullWidth
           >
             <ToggleButton value="expense">支出</ToggleButton>
@@ -138,9 +163,12 @@ export default function TransactionForm({
 
           <Autocomplete
             multiple
+            freeSolo
             options={tags}
             value={selectedTags}
-            onChange={(_, value) => setSelectedTags(value.filter((v): v is Tag => typeof v !== 'string'))}
+            onChange={(_, value) => {
+              void handleTagChange(value);
+            }}
             getOptionLabel={(option) => typeof option === 'string' ? option : option.name}
             renderTags={(value, getTagProps) =>
               value.map((option, index) => (
@@ -150,15 +178,6 @@ export default function TransactionForm({
             renderInput={(params) => (
               <TextField {...params} label="标签" placeholder="选择或创建标签" />
             )}
-            freeSolo
-            onInputChange={(_, value, reason) => {
-              if (reason === 'input' && value) {
-                const existing = tags.find((t) => t.name === value);
-                if (!existing) {
-                  handleCreateTag(value);
-                }
-              }
-            }}
           />
 
           <TextField

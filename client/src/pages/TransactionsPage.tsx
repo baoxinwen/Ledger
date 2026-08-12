@@ -16,6 +16,7 @@ import {
   Add as AddIcon,
   Search as SearchIcon,
 } from '@mui/icons-material';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useCategoryStore } from '../stores/categoryStore';
 import { useTagStore } from '../stores/tagStore';
@@ -24,24 +25,42 @@ import type { TransactionWithDetails, TransactionFilter } from '../types';
 import { transactionApi } from '../api';
 import TransactionList from '../components/TransactionList';
 import TransactionForm from '../components/TransactionForm';
-import { PageHeader } from '../components/ui';
+import { ConfirmDialog, PageHeader } from '../components/ui';
 
 export default function TransactionsPage() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const { transactions, total, filter, fetchTransactions, setFilter } = useTransactionStore();
   const { categories, fetchCategories } = useCategoryStore();
   const { tags, fetchTags, createTag } = useTagStore();
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<TransactionWithDetails | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<TransactionWithDetails | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [keywordInput, setKeywordInput] = useState(filter.keyword || '');
   const debounceTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // 始终持有最新 filter，供防抖回调读取，避免闭包捕获过期筛选条件（如在防抖窗口内切换了类型/分类）。
+  const filterRef = useRef(filter);
+  useEffect(() => {
+    filterRef.current = filter;
+  }, [filter]);
   const { showSnackbar } = useSnackbarStore();
 
   useEffect(() => {
-    fetchTransactions({});
+    fetchTransactions({}).catch(() => showSnackbar('加载记录失败，请重试', 'error'));
     fetchCategories();
     fetchTags();
   }, []);
+
+  useEffect(() => {
+    const state = location.state as { openCreate?: boolean } | null;
+    if (!state?.openCreate) return;
+
+    setEditingTransaction(null);
+    setFormOpen(true);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.pathname, location.state, navigate]);
 
   // Debounce keyword search
   useEffect(() => {
@@ -49,8 +68,9 @@ export default function TransactionsPage() {
       clearTimeout(debounceTimer.current);
     }
     debounceTimer.current = setTimeout(() => {
-      if (keywordInput !== (filter.keyword || '')) {
-        handleFilterChange({ ...filter, keyword: keywordInput || undefined, page: 1 });
+      const latestFilter = filterRef.current;
+      if (keywordInput !== (latestFilter.keyword || '')) {
+        handleFilterChange({ ...latestFilter, keyword: keywordInput || undefined, page: 1 });
       }
     }, 400);
     return () => {
@@ -62,14 +82,14 @@ export default function TransactionsPage() {
 
   const handleFilterChange = useCallback((newFilter: TransactionFilter) => {
     setFilter(newFilter);
-    fetchTransactions(newFilter);
-  }, [setFilter, fetchTransactions]);
+    fetchTransactions(newFilter).catch(() => showSnackbar('加载记录失败，请重试', 'error'));
+  }, [setFilter, fetchTransactions, showSnackbar]);
 
   const handleClearFilter = () => {
     const defaultFilter: TransactionFilter = { page: 1, limit: 20 };
     setFilter(defaultFilter);
     setKeywordInput('');
-    fetchTransactions(defaultFilter);
+    fetchTransactions(defaultFilter).catch(() => showSnackbar('加载记录失败，请重试', 'error'));
   };
 
   const handlePageChange = (page: number) => {
@@ -84,7 +104,7 @@ export default function TransactionsPage() {
     try {
       await transactionApi.create(data);
       showSnackbar('记录创建成功', 'success');
-      fetchTransactions();
+      await fetchTransactions();
     } catch (err) {
       showSnackbar('创建记录失败，请重试', 'error');
       console.error('Failed to create transaction:', err);
@@ -96,23 +116,31 @@ export default function TransactionsPage() {
     try {
       await transactionApi.update(editingTransaction.id, data);
       showSnackbar('记录更新成功', 'success');
-      fetchTransactions();
+      await fetchTransactions();
     } catch (err) {
       showSnackbar('更新记录失败，请重试', 'error');
       console.error('Failed to update transaction:', err);
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (window.confirm('确定要删除这条记录吗？')) {
-      try {
-        await transactionApi.delete(id);
-        showSnackbar('记录删除成功', 'success');
-        fetchTransactions();
-      } catch (err) {
-        showSnackbar('删除记录失败，请重试', 'error');
-        console.error('Failed to delete transaction:', err);
-      }
+  const handleDelete = (transaction: TransactionWithDetails) => {
+    setDeleteTarget(transaction);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+
+    try {
+      setDeleting(true);
+      await transactionApi.delete(deleteTarget.id);
+      showSnackbar('记录删除成功', 'success');
+      setDeleteTarget(null);
+      await fetchTransactions();
+    } catch (err) {
+      showSnackbar('删除记录失败，请重试', 'error');
+      console.error('Failed to delete transaction:', err);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -353,6 +381,21 @@ export default function TransactionsPage() {
         categories={categories}
         tags={tags}
         onCreateTag={createTag}
+      />
+
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="删除这条记录？"
+        description={
+          deleteTarget
+            ? `将删除「${deleteTarget.note || deleteTarget.category.name}」这条记录。此操作无法恢复。`
+            : undefined
+        }
+        loading={deleting}
+        onCancel={() => {
+          if (!deleting) setDeleteTarget(null);
+        }}
+        onConfirm={handleConfirmDelete}
       />
     </Box>
   );

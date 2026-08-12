@@ -2,6 +2,8 @@
 import db from '../database';
 import { Category } from '../types';
 import { normalizeHexColor, suggestCategoryColor } from '../utils/categoryColor';
+import { chunkArray } from '../utils/array';
+import { HttpError } from '../utils/errors';
 
 export class CategoryService {
   getAll(type?: 'income' | 'expense'): Category[] {
@@ -13,6 +15,18 @@ export class CategoryService {
 
   getById(id: number): Category | undefined {
     return db.prepare('SELECT * FROM categories WHERE id = ?').get(id) as Category | undefined;
+  }
+
+  // 批量取分类，供交易列表联查去 N+1；IN 分批避免超过 SQLite 变量上限。
+  getByIds(ids: number[]): Map<number, Category> {
+    const map = new Map<number, Category>();
+    const uniqueIds = [...new Set(ids)];
+    for (const batch of chunkArray(uniqueIds, 500)) {
+      const placeholders = batch.map(() => '?').join(',');
+      const rows = db.prepare(`SELECT * FROM categories WHERE id IN (${placeholders})`).all(...batch) as Category[];
+      rows.forEach((row) => map.set(row.id, row));
+    }
+    return map;
   }
 
   getByNameAndType(name: string, type: 'income' | 'expense'): Category | undefined {
@@ -57,8 +71,15 @@ export class CategoryService {
     const category = this.getById(id);
     if (!category || category.is_preset) return false;
 
+    // 前置检查引用关系，给出明确原因而不是让外键约束抛错误导（如“引用的分类或标签不存在”）。
     const transactionCount = db.prepare('SELECT COUNT(*) as count FROM transactions WHERE category_id = ?').get(id) as { count: number };
-    if (transactionCount.count > 0) return false;
+    if (transactionCount.count > 0) {
+      throw new HttpError(400, '该分类下已有交易记录，无法删除');
+    }
+    const budgetCount = db.prepare('SELECT COUNT(*) as count FROM budgets WHERE category_id = ?').get(id) as { count: number };
+    if (budgetCount.count > 0) {
+      throw new HttpError(400, '该分类已被预算使用，无法删除');
+    }
 
     db.prepare('DELETE FROM categories WHERE id = ?').run(id);
     return true;

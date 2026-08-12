@@ -28,7 +28,7 @@ interface TransactionListProps {
   onPageChange: (page: number) => void;
   onRowsPerPageChange: (rowsPerPage: number) => void;
   onEdit: (transaction: TransactionWithDetails) => void;
-  onDelete: (id: number) => void;
+  onDelete: (transaction: TransactionWithDetails) => void;
 }
 
 export default function TransactionList({
@@ -48,6 +48,10 @@ export default function TransactionList({
     type === 'expense'
       ? (isDark ? '#B06D73' : '#8A5A61')
       : (isDark ? '#7A8450' : '#5F6F52');
+  const formatSignedAmount = (transaction: TransactionWithDetails) =>
+    `${transaction.type === 'expense' ? '-' : '+'}${formatAmount(transaction.amount)}`;
+  const getTransactionLabel = (transaction: TransactionWithDetails) =>
+    transaction.note || transaction.category.name;
 
   // Mobile card layout
   if (isMobile) {
@@ -56,8 +60,8 @@ export default function TransactionList({
         {transactions.map((transaction) => (
           <Card key={transaction.id} sx={{ mb: 1.5 }}>
             <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1.5, mb: 1.5 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0 }}>
                   <Box
                     sx={{
                       width: 40,
@@ -73,8 +77,8 @@ export default function TransactionList({
                   >
                     {transaction.category.icon}
                   </Box>
-                  <Box>
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography variant="body2" noWrap sx={{ fontWeight: 500 }}>
                       {transaction.category.name}
                     </Typography>
                     <Typography variant="caption" sx={{ color: 'text.secondary' }}>
@@ -88,10 +92,12 @@ export default function TransactionList({
                     fontWeight: 700,
                     fontFamily: '"DM Sans", sans-serif',
                     color: transaction.type === 'expense' ? 'error.main' : 'success.main',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                    fontVariantNumeric: 'tabular-nums',
                   }}
                 >
-                  {transaction.type === 'expense' ? '-' : '+'}
-                  {formatAmount(transaction.amount)}
+                  {formatSignedAmount(transaction)}
                 </Typography>
               </Box>
 
@@ -114,10 +120,10 @@ export default function TransactionList({
                   ))}
                 </Box>
                 <Box>
-                  <IconButton size="small" onClick={() => onEdit(transaction)}>
+                  <IconButton size="small" onClick={() => onEdit(transaction)} aria-label={`编辑${getTransactionLabel(transaction)}`}>
                     <EditIcon fontSize="small" />
                   </IconButton>
-                  <IconButton size="small" onClick={() => onDelete(transaction.id)}>
+                  <IconButton size="small" onClick={() => onDelete(transaction)} aria-label={`删除${getTransactionLabel(transaction)}`}>
                     <DeleteIcon fontSize="small" />
                   </IconButton>
                 </Box>
@@ -158,7 +164,15 @@ export default function TransactionList({
   return (
     <Card>
       <TableContainer>
-        <Table>
+        <Table sx={{ tableLayout: 'fixed', width: '100%', minWidth: 760 }}>
+          <colgroup>
+            <col style={{ width: 116 }} />
+            <col style={{ width: 160 }} />
+            <col />
+            <col style={{ width: 150 }} />
+            <col style={{ width: 136 }} />
+            <col style={{ width: 88 }} />
+          </colgroup>
           <TableHead>
             <TableRow>
               <TableCell>日期</TableCell>
@@ -179,13 +193,13 @@ export default function TransactionList({
                   },
                 }}
               >
-                <TableCell>
+                <TableCell sx={{ width: 116 }}>
                   <Typography variant="body2" sx={{ fontWeight: 500 }}>
                     {transaction.date}
                   </Typography>
                 </TableCell>
-                <TableCell>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <TableCell sx={{ width: 160 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0 }}>
                     <Box
                       sx={{
                         width: 32,
@@ -201,17 +215,27 @@ export default function TransactionList({
                     >
                       {transaction.category.icon}
                     </Box>
-                    <Typography variant="body2">
+                    <Typography variant="body2" noWrap>
                       {transaction.category.name}
                     </Typography>
                   </Box>
                 </TableCell>
-                <TableCell>
-                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                <TableCell sx={{ minWidth: 0 }}>
+                  <Typography
+                    variant="body2"
+                    title={transaction.note || undefined}
+                    sx={{
+                      color: 'text.secondary',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      display: 'block',
+                    }}
+                  >
                     {transaction.note || '-'}
                   </Typography>
                 </TableCell>
-                <TableCell>
+                <TableCell sx={{ width: 150 }}>
                   <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                     {transaction.tags.map((tag) => (
                       <Chip
@@ -224,24 +248,25 @@ export default function TransactionList({
                     ))}
                   </Box>
                 </TableCell>
-                <TableCell align="right">
+                <TableCell align="right" sx={{ width: 136, whiteSpace: 'nowrap' }}>
                   <Typography
                     variant="body2"
                     sx={{
                       fontWeight: 700,
                       fontFamily: '"DM Sans", sans-serif',
                       color: transaction.type === 'expense' ? 'error.main' : 'success.main',
+                      whiteSpace: 'nowrap',
+                      fontVariantNumeric: 'tabular-nums',
                     }}
                   >
-                    {transaction.type === 'expense' ? '-' : '+'}
-                    {formatAmount(transaction.amount)}
+                    {formatSignedAmount(transaction)}
                   </Typography>
                 </TableCell>
-                <TableCell align="center">
-                  <IconButton size="small" onClick={() => onEdit(transaction)}>
+                <TableCell align="center" sx={{ width: 88, whiteSpace: 'nowrap' }}>
+                  <IconButton size="small" onClick={() => onEdit(transaction)} aria-label={`编辑${getTransactionLabel(transaction)}`}>
                     <EditIcon fontSize="small" />
                   </IconButton>
-                  <IconButton size="small" onClick={() => onDelete(transaction.id)}>
+                  <IconButton size="small" onClick={() => onDelete(transaction)} aria-label={`删除${getTransactionLabel(transaction)}`}>
                     <DeleteIcon fontSize="small" />
                   </IconButton>
                 </TableCell>

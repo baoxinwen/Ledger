@@ -16,15 +16,16 @@ import { suggestCategoryFormColor } from '../../utils/categoryColor';
 interface CategoryFormDialogProps {
   open: boolean;
   category: Category | null;
+  defaultType?: 'income' | 'expense';
   categories: Category[];
   onClose: () => void;
   onSubmit: (data: { name: string; type: 'income' | 'expense'; icon?: string; color?: string }) => Promise<void>;
 }
 
-export default function CategoryFormDialog({ open, category, categories, onClose, onSubmit }: CategoryFormDialogProps) {
+export default function CategoryFormDialog({ open, category, defaultType, categories, onClose, onSubmit }: CategoryFormDialogProps) {
   const [form, setForm] = useState({
     name: '',
-    type: 'expense' as 'income' | 'expense',
+    type: (defaultType ?? 'expense') as 'income' | 'expense',
     icon: '',
     color: '#5F6F52',
   });
@@ -41,7 +42,7 @@ export default function CategoryFormDialog({ open, category, categories, onClose
         color: category.color || suggestCategoryFormColor(category.type, category.name, categories),
       });
     } else {
-      const type = 'expense';
+      const type = defaultType ?? 'expense';
       setForm({
         name: '',
         type,
@@ -49,7 +50,7 @@ export default function CategoryFormDialog({ open, category, categories, onClose
         color: suggestCategoryFormColor(type, '', categories),
       });
     }
-  }, [category?.id, categories, open]);
+  }, [category?.id, categories, defaultType, open]);
 
   const handleSubmit = async () => {
     setSubmitting(true);

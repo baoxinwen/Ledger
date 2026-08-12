@@ -6,6 +6,13 @@ import { categoryService } from './category.service';
 import { tagService } from './tag.service';
 import { transactionService } from './transaction.service';
 
+// 单个 XLSX ZIP 条目的最大解压体积，防止单条目 zip bomb。
+const MAX_XLSX_ENTRY_BYTES = 50 * 1024 * 1024;
+// 所有条目累计解压体积上限：即使每个条目都在单条限制内，总量超限也要拒绝，避免聚合 zip bomb。
+const MAX_XLSX_TOTAL_BYTES = 100 * 1024 * 1024;
+// 条目数量上限，防止海量小条目拖垮解析。
+const MAX_XLSX_ENTRIES = 1000;
+
 type ImportSource = 'standard' | 'alipay' | 'wechat';
 export type FileImportSource = ImportSource | 'auto';
 
@@ -136,7 +143,7 @@ export function parseImportedFile(buffer: Buffer, filename: string, requestedSou
   const source = detectSource(requestedSource, lowerName, utf8Text, gb18030Text);
 
   if (source === 'alipay') {
-    return { source, ...parseAlipayBillWithSkipped(gb18030Text) };
+    return { source, ...parseAlipayBillWithSkipped(pickAlipayText(utf8Text, gb18030Text)) };
   }
   if (source === 'wechat') {
     return { source, ...parseWechatBillWithSkipped(buffer) };
@@ -318,15 +325,33 @@ export function parseStandardJson(text: string): ImportableTransaction[] {
 
 export function parseStandardCsv(text: string): ImportableTransaction[] {
   const rows = parseCsvRows(text);
-  const headerIndex = rows.findIndex((row) => row.includes('日期') && row.includes('类型') && row.includes('分类'));
+  // 表头检测用“包含”匹配：带前缀的列名（如“交易日期”“交易类型”）也应命中。
+  const headerIndex = rows.findIndex((row) =>
+    row.some((cell) => cell.includes('日期')) &&
+    row.some((cell) => cell.includes('类型')) &&
+    row.some((cell) => cell.includes('分类'))
+  );
   if (headerIndex === -1) {
     throw new Error('Standard CSV header row not found');
   }
 
-  const header = rows[headerIndex];
+  // 表头可能带前缀，先映射到规范字段名再取值，避免整份导入逐行失败。
+  const header = rows[headerIndex].map(normalizeStandardHeaderKey);
   return rows.slice(headerIndex + 1)
     .filter((row) => row.some((cell) => cell.trim()))
     .map((row, index) => normalizeStandardTransaction(rowToRecord(header, row), index + 1, index + headerIndex + 2));
+}
+
+// 标准 CSV 表头按包含关系映射到规范字段名（日期/类型/分类/金额/标签/备注），其余列名原样保留。
+function normalizeStandardHeaderKey(raw: string): string {
+  const key = raw.trim();
+  if (key.includes('日期')) return '日期';
+  if (key.includes('类型')) return '类型';
+  if (key.includes('分类')) return '分类';
+  if (key.includes('金额')) return '金额';
+  if (key.includes('标签')) return '标签';
+  if (key.includes('备注')) return '备注';
+  return key;
 }
 
 export function parseCsvRows(text: string): string[][] {
@@ -377,6 +402,16 @@ export function parseCsvRows(text: string): string[][] {
   return rows;
 }
 
+// 支付宝 CSV 可能是 GB18030 或 UTF-8；按哪种解码能识别出表头/标识来选择解析文本，避免把 UTF-8 文件按 GB18030 解析成乱码。
+function pickAlipayText(utf8Text: string, gb18030Text: string): string {
+  const looksLikeAlipay = (text: string) => text.includes('支付宝') || text.includes('交易时间');
+  const utf8Looks = looksLikeAlipay(utf8Text);
+  const gbLooks = looksLikeAlipay(gb18030Text);
+  if (utf8Looks && !gbLooks) return utf8Text;
+  if (gbLooks && !utf8Looks) return gb18030Text;
+  return utf8Looks ? utf8Text : gb18030Text;
+}
+
 function detectSource(
   requestedSource: FileImportSource,
   lowerName: string,
@@ -398,7 +433,12 @@ function normalizeStandardTransaction(input: Record<string, unknown>, importRow?
     : String(tagsValue || '').split(/[;；]/).filter(Boolean);
 
   return {
-    type: typeValue === 'income' || typeValue === '收入' ? 'income' : 'expense',
+    // 未知类型（大写、拼写错误等）保留原文而非静默转成 expense，交由 validateTransaction 报错。
+    type: typeValue === 'income' || typeValue === '收入'
+      ? 'income'
+      : typeValue === 'expense' || typeValue === '支出'
+        ? 'expense'
+        : typeValue as 'income' | 'expense',
     amount: parseAmount(input.amount ?? input['金额']),
     category: String(input.category ?? input['分类'] ?? '其他').trim(),
     date: String(input.date ?? input['日期'] ?? '').trim(),
@@ -578,8 +618,9 @@ function rowToRecord(header: string[], row: string[]): Record<string, string> {
   }, {});
 }
 
-function isUniqueConstraintError(error: unknown): boolean {
-  return error instanceof Error && /UNIQUE|constraint/i.test(error.message);
+// 仅匹配唯一索引冲突；不要用宽泛的 /constraint/，否则会把外键失败等误判为“重复记录”。
+export function isUniqueConstraintError(error: unknown): boolean {
+  return error instanceof Error && /UNIQUE constraint failed/i.test(error.message);
 }
 
 function parseFirstWorksheet(buffer: Buffer): string[][] {
@@ -611,7 +652,13 @@ function parseFirstWorksheet(buffer: Buffer): string[][] {
   return rows;
 }
 
-function extractZipFiles(buffer: Buffer): Map<string, Buffer> {
+// 解析 ZIP 条目。limits 可注入更小的预算供测试验证；默认使用全局上限。
+export function extractZipFiles(
+  buffer: Buffer,
+  limits: { maxTotalBytes?: number; maxEntries?: number } = {}
+): Map<string, Buffer> {
+  const maxTotalBytes = limits.maxTotalBytes ?? MAX_XLSX_TOTAL_BYTES;
+  const maxEntries = limits.maxEntries ?? MAX_XLSX_ENTRIES;
   const files = new Map<string, Buffer>();
   const entries = new Map<string, ZipEntry>();
   const eocdOffset = findEndOfCentralDirectory(buffer);
@@ -623,6 +670,9 @@ function extractZipFiles(buffer: Buffer): Map<string, Buffer> {
   while (cursor < centralDirectoryEnd) {
     if (buffer.readUInt32LE(cursor) !== 0x02014b50) {
       throw new Error('Invalid XLSX central directory');
+    }
+    if (entries.size >= maxEntries) {
+      throw new Error('XLSX 文件条目过多，已拒绝解析');
     }
 
     const method = buffer.readUInt16LE(cursor + 10);
@@ -638,6 +688,7 @@ function extractZipFiles(buffer: Buffer): Map<string, Buffer> {
     cursor = nameStart + fileNameLength + extraLength + commentLength;
   }
 
+  let totalInflatedBytes = 0;
   entries.forEach((entry, name) => {
     const localOffset = entry.localHeaderOffset;
     if (buffer.readUInt32LE(localOffset) !== 0x04034b50) {
@@ -647,7 +698,14 @@ function extractZipFiles(buffer: Buffer): Map<string, Buffer> {
     const extraLength = buffer.readUInt16LE(localOffset + 28);
     const dataStart = localOffset + 30 + fileNameLength + extraLength;
     const compressed = buffer.subarray(dataStart, dataStart + entry.compressedSize);
-    const content = entry.method === 0 ? compressed : inflateRawSync(compressed);
+    // 单条目限制解压输出大小（超限抛 ERR_BUFFER_TOO_LARGE）；同时累计所有条目总量，防聚合 zip bomb。
+    const content = entry.method === 0
+      ? compressed
+      : inflateRawSync(compressed, { maxOutputLength: MAX_XLSX_ENTRY_BYTES });
+    totalInflatedBytes += content.length;
+    if (totalInflatedBytes > maxTotalBytes) {
+      throw new Error('XLSX 解压后体积过大，已拒绝解析');
+    }
     files.set(name, content);
   });
 

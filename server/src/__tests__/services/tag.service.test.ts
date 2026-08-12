@@ -1,139 +1,53 @@
-// 标签服务测试保护标签唯一性和交易标签关联查询。
+// 标签服务测试：创建去重、删除、按交易查询与批量反查。
+jest.mock('../../database', () => ({
+  __esModule: true,
+  default: require('../setup').default,
+}));
+
 import db from '../setup';
+import { tagService } from '../../services/tag.service';
+import { transactionService } from '../../services/transaction.service';
 
 describe('TagService', () => {
+  let expenseId: number;
+
   beforeEach(() => {
     db.exec('DELETE FROM transaction_tags');
+    db.exec('DELETE FROM transactions');
     db.exec('DELETE FROM tags');
+    db.exec('DELETE FROM categories');
+
+    const cat = db.prepare(
+      `INSERT INTO categories (name, type, icon, color, is_preset, sort_order) VALUES ('餐饮', 'expense', '🍽️', '#8A5A61', 1, 0)`
+    ).run();
+    expenseId = cat.lastInsertRowid as number;
   });
 
-  describe('getAll', () => {
-    it('should return all tags', () => {
-      db.exec(`INSERT INTO tags (name) VALUES ('午餐'), ('晚餐'), ('交通')`);
-
-      const tags = db.prepare('SELECT * FROM tags ORDER BY name').all();
-      expect(tags).toHaveLength(3);
-    });
-
-    it('should return empty array when no tags', () => {
-      const tags = db.prepare('SELECT * FROM tags').all();
-      expect(tags).toHaveLength(0);
-    });
+  it('create 去重：同名标签返回既有记录', () => {
+    const first = tagService.create('午餐');
+    const second = tagService.create('午餐');
+    expect(second.id).toBe(first.id);
+    expect(tagService.getAll()).toHaveLength(1);
   });
 
-  describe('getById', () => {
-    it('should return tag by id', () => {
-      const result = db.prepare(`INSERT INTO tags (name) VALUES ('午餐')`).run();
-
-      const tag = db.prepare('SELECT * FROM tags WHERE id = ?').get(result.lastInsertRowid);
-      expect(tag).toBeDefined();
-      expect((tag as any).name).toBe('午餐');
-    });
-
-    it('should return undefined for non-existent id', () => {
-      const tag = db.prepare('SELECT * FROM tags WHERE id = ?').get(999);
-      expect(tag).toBeUndefined();
-    });
+  it('getById / delete 基础操作', () => {
+    const tag = tagService.create('通勤');
+    expect(tagService.getById(tag.id)?.name).toBe('通勤');
+    expect(tagService.delete(tag.id)).toBe(true);
+    expect(tagService.getById(tag.id)).toBeUndefined();
+    expect(tagService.delete(tag.id)).toBe(false);
   });
 
-  describe('getByName', () => {
-    it('should return tag by name', () => {
-      db.prepare(`INSERT INTO tags (name) VALUES ('午餐')`).run();
+  it('getByTransactionId 与批量 getByTransactionIds 返回交易标签', () => {
+    const lunch = tagService.create('午餐');
+    const commute = tagService.create('通勤');
+    const t1 = transactionService.create({ type: 'expense', amount: 10, category_id: expenseId, date: '2026-01-01', tag_ids: [lunch.id] });
+    const t2 = transactionService.create({ type: 'expense', amount: 20, category_id: expenseId, date: '2026-01-02', tag_ids: [lunch.id, commute.id] });
 
-      const tag = db.prepare('SELECT * FROM tags WHERE name = ?').get('午餐');
-      expect(tag).toBeDefined();
-    });
+    expect(tagService.getByTransactionId(t1.id).map((t) => t.name)).toEqual(['午餐']);
 
-    it('should return undefined for non-existent name', () => {
-      const tag = db.prepare('SELECT * FROM tags WHERE name = ?').get('不存在的标签');
-      expect(tag).toBeUndefined();
-    });
-  });
-
-  describe('create', () => {
-    it('should create a new tag', () => {
-      const result = db.prepare('INSERT INTO tags (name) VALUES (?)').run('午餐');
-      const tag = db.prepare('SELECT * FROM tags WHERE id = ?').get(result.lastInsertRowid);
-
-      expect(tag).toBeDefined();
-      expect((tag as any).name).toBe('午餐');
-    });
-
-    it('should return existing tag if name exists', () => {
-      db.prepare('INSERT INTO tags (name) VALUES (?)').run('午餐');
-      db.prepare('INSERT OR IGNORE INTO tags (name) VALUES (?)').run('午餐');
-
-      const tags = db.prepare('SELECT * FROM tags WHERE name = ?').all('午餐');
-      expect(tags).toHaveLength(1);
-    });
-
-    it('should create multiple different tags', () => {
-      db.prepare('INSERT INTO tags (name) VALUES (?)').run('午餐');
-      db.prepare('INSERT INTO tags (name) VALUES (?)').run('晚餐');
-
-      const tags = db.prepare('SELECT * FROM tags').all();
-      expect(tags).toHaveLength(2);
-    });
-  });
-
-  describe('delete', () => {
-    it('should delete tag', () => {
-      const result = db.prepare(`INSERT INTO tags (name) VALUES ('午餐')`).run();
-
-      const deleteResult = db.prepare('DELETE FROM tags WHERE id = ?').run(result.lastInsertRowid);
-      expect(deleteResult.changes).toBe(1);
-      expect(db.prepare('SELECT * FROM tags WHERE id = ?').get(result.lastInsertRowid)).toBeUndefined();
-    });
-
-    it('should return false for non-existent tag', () => {
-      const result = db.prepare('DELETE FROM tags WHERE id = ?').run(999);
-      expect(result.changes).toBe(0);
-    });
-  });
-
-  describe('getByTransactionId', () => {
-    it('should return tags for transaction', () => {
-      const catResult = db.prepare(`
-        INSERT INTO categories (name, type, icon, color, is_preset, sort_order)
-        VALUES ('餐饮', 'expense', '🍽️', '#FF6B6B', 1, 0)
-      `).run();
-
-      const txResult = db.prepare(`
-        INSERT INTO transactions (type, amount, category_id, note, date)
-        VALUES ('expense', 100, ?, '午餐', '2024-01-15')
-      `).run(catResult.lastInsertRowid);
-
-      const tag1 = db.prepare(`INSERT INTO tags (name) VALUES ('工作日')`).run();
-      const tag2 = db.prepare(`INSERT INTO tags (name) VALUES ('午餐')`).run();
-
-      db.prepare('INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (?, ?)').run(txResult.lastInsertRowid, tag1.lastInsertRowid);
-      db.prepare('INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (?, ?)').run(txResult.lastInsertRowid, tag2.lastInsertRowid);
-
-      const tags = db.prepare(`
-        SELECT t.* FROM tags t
-        JOIN transaction_tags tt ON t.id = tt.tag_id
-        WHERE tt.transaction_id = ?
-      `).all(txResult.lastInsertRowid);
-      expect(tags).toHaveLength(2);
-    });
-
-    it('should return empty array for transaction without tags', () => {
-      const catResult = db.prepare(`
-        INSERT INTO categories (name, type, icon, color, is_preset, sort_order)
-        VALUES ('餐饮', 'expense', '🍽️', '#FF6B6B', 1, 0)
-      `).run();
-
-      const txResult = db.prepare(`
-        INSERT INTO transactions (type, amount, category_id, note, date)
-        VALUES ('expense', 100, ?, '午餐', '2024-01-15')
-      `).run(catResult.lastInsertRowid);
-
-      const tags = db.prepare(`
-        SELECT t.* FROM tags t
-        JOIN transaction_tags tt ON t.id = tt.tag_id
-        WHERE tt.transaction_id = ?
-      `).all(txResult.lastInsertRowid);
-      expect(tags).toHaveLength(0);
-    });
+    const map = tagService.getByTransactionIds([t1.id, t2.id]);
+    expect(map.get(t1.id)?.map((t) => t.name)).toEqual(['午餐']);
+    expect(map.get(t2.id)?.map((t) => t.name).sort()).toEqual(['午餐', '通勤']);
   });
 });

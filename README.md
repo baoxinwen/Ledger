@@ -9,6 +9,7 @@
 - 预算管理：支持月度/年度预算，并按当前业务时区计算本月预算状态。
 - 账单导入：支持标准 JSON/CSV、支付宝 CSV、微信 XLSX。
 - 偏好设置：支持业务时区和界面主题设置。
+- 登录鉴权：首次运行通过日志中的初始化 Token 创建唯一账户，之后用户名+密码登录，数据接口一律需登录访问。
 - Docker 部署：GitHub Actions 构建镜像，Docker Compose 一键启动。
 
 ## 技术栈
@@ -71,6 +72,38 @@ GitHub Actions 会在 `main` 分支推送后构建并发布这个镜像。容器
 | 更新到最新镜像 | `docker compose pull && docker compose up -d` | 拉取镜像后重新创建容器。 |
 | 停止服务 | `docker compose down` | 停止并删除容器，不删除 `./data` 数据。 |
 | 本地临时构建镜像 | `docker build -t ledger:local .` | 用当前代码在本机打一个测试镜像。 |
+
+## 登录与安全
+
+应用默认开启登录鉴权：所有数据接口都需要登录后才能访问，未登录只能看到登录或初始化页面。
+
+首次部署（或数据卷中还没有账户）时，启动后会在日志中输出一次性**初始化 Token**：
+
+```bash
+docker compose up -d
+docker compose logs -f app
+```
+
+日志里会出现类似下面的横幅，把其中的 Token 复制到浏览器初始化页面创建账户：
+
+```text
+==============================================================
+首次使用：请先创建你的登录账户
+初始化 Token：xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+提示：Token 在创建账户后立即失效；创建账户前重启容器会重新生成
+==============================================================
+```
+
+- Token 只用于创建账户，创建成功后立即失效；此后使用用户名 + 密码登录。
+- 创建账户前重启容器会重新生成 Token，以最新一次日志输出为准。
+- 会话有效期 30 天；退出登录后立即失效。
+- 如果通过 HTTPS 反向代理访问，在 `docker-compose.yml` 的 `environment` 中增加 `COOKIE_SECURE=true`，让会话 Cookie 只走 HTTPS。
+- 如果部署在 Nginx 等反向代理后，在 `docker-compose.yml` 的 `environment` 中增加 `TRUST_PROXY=true`，让登录限流按真实客户端 IP 计数（否则同一代理 IP 会被当作同一来源合并限流）。
+- 容器以非 root 用户（node，uid 1000）运行；若宿主 `./data` 目录属主不是 1000，首次迁移请执行 `chown -R 1000:1000 ./data`。
+
+忘记密码：目前没有内置找回。需要停止服务后，用 SQLite 工具删除挂载卷 `./data/ledger.db` 中 `users` 和 `sessions` 表的数据，重启后应用会重新进入初始化流程。
+
+本地开发同样需要先创建账户；调试时若想跳过登录，可在启动后端前用 `SETUP_TOKEN` 固定初始化 Token（仅非生产环境生效）。
 
 ## 本地开发
 
@@ -141,13 +174,13 @@ npm run test:e2e
 | `cd server && npm test` | 改了后端逻辑、导入解析、预算、设置、数据库时运行 | 运行 Jest 单元测试，确认后端核心逻辑符合预期。 |
 | `cd server && npm run build` | 改了后端 TypeScript 文件后运行 | 检查后端能否编译到 `server/dist`。 |
 | `cd client && npm run build` | 改了前端页面、组件、store、工具函数后运行 | 检查前端 TypeScript 和 Vite 生产构建是否通过。 |
-| `cd client && npm run test:e2e` | 改了页面交互、布局、路由、导入导出界面时运行 | 启动 Playwright 浏览器测试，验证真实页面交互。 |
+| `cd client && npm run test:e2e` | 改了页面交互、布局、路由、导入导出界面时运行 | 启动 Playwright 浏览器测试，验证真实页面交互。e2e 自包含运行：会自动启动隔离后端（8088 端口、临时数据库、已知初始化 Token）和前端，不依赖你手动开启服务。 |
 
 常见现象：
 
 - `npm run build` 只要最后显示成功，就算通过。
 - Vite 提示 `Some chunks are larger than 500 kB` 是体积警告，不是构建失败。
-- Playwright 需要能启动浏览器和本地 Vite 服务；如果本机权限限制浏览器启动，可能会出现 `spawn EPERM`。
+- Playwright 需要能启动浏览器；如果本机权限限制浏览器启动，可能会出现 `spawn EPERM`。
 - 如果只改 README 这类文档，一般不需要跑测试。
 
 ## 账单导入规则

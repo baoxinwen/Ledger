@@ -83,6 +83,17 @@ export interface AppSettings {
 
 export type ImportFileSource = 'auto' | 'standard' | 'alipay' | 'wechat';
 
+export interface AuthUser {
+  username: string;
+}
+
+// 后端 /api/auth/me 的返回结构：前端据此区分“需要初始化 / 未登录 / 已登录”。
+export interface AuthStatus {
+  authenticated: boolean;
+  needsSetup: boolean;
+  user: AuthUser | null;
+}
+
 export interface ImportDiagnostic {
   level: 'info' | 'warning' | 'error';
   outcome: 'skipped' | 'duplicate' | 'failed';

@@ -1,149 +1,79 @@
-// 分类服务测试保护预置分类、自定义分类和名称类型匹配行为。
+// 分类服务测试：创建、查询、预置保护、颜色建议与删除约束。
+jest.mock('../../database', () => ({
+  __esModule: true,
+  default: require('../setup').default,
+}));
+
 import db from '../setup';
+import { categoryService } from '../../services/category.service';
+import { EDITORIAL_CATEGORY_PALETTE } from '../../utils/categoryColor';
 
 describe('CategoryService', () => {
   beforeEach(() => {
+    db.exec('DELETE FROM budgets');
+    db.exec('DELETE FROM transactions');
     db.exec('DELETE FROM categories');
   });
 
-  describe('getAll', () => {
-    it('should return all categories', () => {
-      db.exec(`
-        INSERT INTO categories (name, type, icon, color, is_preset, sort_order) VALUES
-        ('餐饮', 'expense', '🍽️', '#FF6B6B', 1, 0),
-        ('工资', 'income', '💰', '#2ECC71', 1, 0)
-      `);
-
-      const categories = db.prepare('SELECT * FROM categories').all();
-      expect(categories).toHaveLength(2);
-    });
-
-    it('should filter by type', () => {
-      db.exec(`
-        INSERT INTO categories (name, type, icon, color, is_preset, sort_order) VALUES
-        ('餐饮', 'expense', '🍽️', '#FF6B6B', 1, 0),
-        ('工资', 'income', '💰', '#2ECC71', 1, 0)
-      `);
-
-      const categories = db.prepare('SELECT * FROM categories WHERE type = ?').all('expense');
-      expect(categories).toHaveLength(1);
-      expect((categories[0] as any).name).toBe('餐饮');
-    });
-
-    it('should return empty array when no categories', () => {
-      const categories = db.prepare('SELECT * FROM categories').all();
-      expect(categories).toHaveLength(0);
-    });
+  it('create 生成自定义分类并自动建议颜色', () => {
+    const category = categoryService.create({ name: '宠物', type: 'expense' });
+    expect(category.id).toBeGreaterThan(0);
+    expect(category.is_preset).toBe(0);
+    expect(EDITORIAL_CATEGORY_PALETTE).toContain(category.color);
   });
 
-  describe('getById', () => {
-    it('should return category by id', () => {
-      const result = db.prepare(`
-        INSERT INTO categories (name, type, icon, color, is_preset, sort_order)
-        VALUES ('餐饮', 'expense', '🍽️', '#FF6B6B', 1, 0)
-      `).run();
+  it('getAll 按类型过滤', () => {
+    categoryService.create({ name: '宠物', type: 'expense' });
+    categoryService.create({ name: '房租收入', type: 'income' });
 
-      const category = db.prepare('SELECT * FROM categories WHERE id = ?').get(result.lastInsertRowid);
-      expect(category).toBeDefined();
-      expect((category as any).name).toBe('餐饮');
-    });
-
-    it('should return undefined for non-existent id', () => {
-      const category = db.prepare('SELECT * FROM categories WHERE id = ?').get(999);
-      expect(category).toBeUndefined();
-    });
+    expect(categoryService.getAll('expense')).toHaveLength(1);
+    expect(categoryService.getAll('income')).toHaveLength(1);
+    expect(categoryService.getAll()).toHaveLength(2);
   });
 
-  describe('create', () => {
-    it('should create a new category', () => {
-      const result = db.prepare(
-        'INSERT INTO categories (name, type, icon, color, is_preset, sort_order) VALUES (?, ?, ?, ?, 0, ?)'
-      ).run('宠物', 'expense', '🐱', '#FF9800', 0);
-
-      const category = db.prepare('SELECT * FROM categories WHERE id = ?').get(result.lastInsertRowid);
-      expect(category).toBeDefined();
-      expect((category as any).name).toBe('宠物');
-      expect((category as any).type).toBe('expense');
-      expect((category as any).is_preset).toBe(0);
-    });
-
-    it('should set sort_order correctly', () => {
-      db.prepare(`
-        INSERT INTO categories (name, type, icon, color, is_preset, sort_order)
-        VALUES ('餐饮', 'expense', '🍽️', '#FF6B6B', 1, 0)
-      `).run();
-
-      const maxOrder = db.prepare('SELECT MAX(sort_order) as max FROM categories WHERE type = ?').get('expense') as any;
-      const newOrder = (maxOrder.max || 0) + 1;
-
-      const result = db.prepare(
-        'INSERT INTO categories (name, type, icon, color, is_preset, sort_order) VALUES (?, ?, ?, ?, 0, ?)'
-      ).run('宠物', 'expense', null, null, newOrder);
-
-      const category = db.prepare('SELECT * FROM categories WHERE id = ?').get(result.lastInsertRowid) as any;
-      expect(category.sort_order).toBe(1);
-    });
+  it('getByNameAndType 精确匹配', () => {
+    categoryService.create({ name: '宠物', type: 'expense' });
+    expect(categoryService.getByNameAndType('宠物', 'expense')?.name).toBe('宠物');
+    expect(categoryService.getByNameAndType('宠物', 'income')).toBeUndefined();
   });
 
-  describe('update', () => {
-    it('should update custom category', () => {
-      const result = db.prepare(`
-        INSERT INTO categories (name, type, icon, color, is_preset, sort_order)
-        VALUES ('宠物', 'expense', '🐱', '#FF9800', 0, 0)
-      `).run();
+  it('update 只允许修改自定义分类', () => {
+    const custom = categoryService.create({ name: '宠物', type: 'expense' });
+    const updated = categoryService.update(custom.id, { name: '宠物用品' });
+    expect(updated?.name).toBe('宠物用品');
 
-      db.prepare('UPDATE categories SET name = ? WHERE id = ?').run('宠物食品', result.lastInsertRowid);
-      const category = db.prepare('SELECT * FROM categories WHERE id = ?').get(result.lastInsertRowid) as any;
-      expect(category.name).toBe('宠物食品');
-    });
-
-    it('should not update preset category', () => {
-      const result = db.prepare(`
-        INSERT INTO categories (name, type, icon, color, is_preset, sort_order)
-        VALUES ('餐饮', 'expense', '🍽️', '#FF6B6B', 1, 0)
-      `).run();
-
-      const category = db.prepare('SELECT * FROM categories WHERE id = ? AND is_preset = 0').get(result.lastInsertRowid);
-      expect(category).toBeUndefined();
-    });
+    // 预置分类不可改
+    const preset = db.prepare(
+      `INSERT INTO categories (name, type, icon, color, is_preset, sort_order) VALUES ('餐饮', 'expense', '🍽️', '#8A5A61', 1, 0)`
+    ).run();
+    expect(categoryService.update(preset.lastInsertRowid as number, { name: '改名' })).toBeNull();
   });
 
-  describe('delete', () => {
-    it('should delete custom category', () => {
-      const result = db.prepare(`
-        INSERT INTO categories (name, type, icon, color, is_preset, sort_order)
-        VALUES ('宠物', 'expense', '🐱', '#FF9800', 0, 0)
-      `).run();
+  it('delete 拒绝删除预置分类与有交易/预算引用的分类', () => {
+    const preset = db.prepare(
+      `INSERT INTO categories (name, type, icon, color, is_preset, sort_order) VALUES ('餐饮', 'expense', '🍽️', '#8A5A61', 1, 0)`
+    ).run();
+    expect(categoryService.delete(preset.lastInsertRowid as number)).toBe(false);
 
-      const deleteResult = db.prepare('DELETE FROM categories WHERE id = ? AND is_preset = 0').run(result.lastInsertRowid);
-      expect(deleteResult.changes).toBe(1);
-      expect(db.prepare('SELECT * FROM categories WHERE id = ?').get(result.lastInsertRowid)).toBeUndefined();
-    });
+    const custom = categoryService.create({ name: '宠物', type: 'expense' });
+    db.prepare('INSERT INTO transactions (type, amount, category_id, date) VALUES (?, ?, ?, ?)').run(
+      'expense', 10, custom.id, '2026-01-01'
+    );
+    expect(() => categoryService.delete(custom.id)).toThrow('已有交易记录');
 
-    it('should not delete preset category', () => {
-      const result = db.prepare(`
-        INSERT INTO categories (name, type, icon, color, is_preset, sort_order)
-        VALUES ('餐饮', 'expense', '🍽️', '#FF6B6B', 1, 0)
-      `).run();
+    // 未被引用的自定义分类可删除
+    const free = categoryService.create({ name: '闲置', type: 'expense' });
+    expect(categoryService.delete(free.id)).toBe(true);
+    expect(categoryService.getById(free.id)).toBeUndefined();
+  });
 
-      const deleteResult = db.prepare('DELETE FROM categories WHERE id = ? AND is_preset = 0').run(result.lastInsertRowid);
-      expect(deleteResult.changes).toBe(0);
-      expect(db.prepare('SELECT * FROM categories WHERE id = ?').get(result.lastInsertRowid)).toBeDefined();
-    });
-
-    it('should not delete category with transactions', () => {
-      const catResult = db.prepare(`
-        INSERT INTO categories (name, type, icon, color, is_preset, sort_order)
-        VALUES ('餐饮', 'expense', '🍽️', '#FF6B6B', 0, 0)
-      `).run();
-
-      db.prepare(`
-        INSERT INTO transactions (type, amount, category_id, note, date)
-        VALUES ('expense', 100, ?, '午餐', '2024-01-15')
-      `).run(catResult.lastInsertRowid);
-
-      const transactionCount = db.prepare('SELECT COUNT(*) as count FROM transactions WHERE category_id = ?').get(catResult.lastInsertRowid) as any;
-      expect(transactionCount.count).toBeGreaterThan(0);
-    });
+  it('连续创建分类颜色尽量不重复', () => {
+    const colors = new Set<string>();
+    for (let index = 0; index < 8; index++) {
+      const category = categoryService.create({ name: `分类${index}`, type: 'expense' });
+      colors.add(category.color!);
+    }
+    // 调色板 24 色足够前 8 个不重复
+    expect(colors.size).toBe(8);
   });
 });

@@ -3,6 +3,7 @@ import db from '../database';
 import { Transaction, TransactionWithDetails, TransactionFilter, ImportMetadata } from '../types';
 import { categoryService } from './category.service';
 import { tagService } from './tag.service';
+import { roundToCents } from '../utils/amount';
 
 export class TransactionService {
   private buildWhereClause(filter: TransactionFilter): { whereClause: string; params: any[] } {
@@ -45,8 +46,8 @@ export class TransactionService {
       params.push(max_amount);
     }
     if (keyword) {
-      whereClauses.push('t.note LIKE ?');
-      params.push(`%${keyword}%`);
+      whereClauses.push(`t.note LIKE ? ESCAPE '\\'`);
+      params.push(`%${escapeLikeKeyword(keyword)}%`);
     }
     if (tag_id) {
       whereClauses.push('EXISTS (SELECT 1 FROM transaction_tags tt WHERE tt.transaction_id = t.id AND tt.tag_id = ?)');
@@ -77,14 +78,20 @@ export class TransactionService {
     const dataSql = `
       SELECT t.* FROM transactions t
       ${whereClause}
-      ORDER BY ${sortColumn} ${sortOrder}
+      ORDER BY ${sortColumn} ${sortOrder}, t.id
       LIMIT ? OFFSET ?
     `;
 
     const transactions = db.prepare(dataSql).all(...params, limit, offset) as Transaction[];
-    const data = transactions.map(t => this.enrichTransaction(t));
+    const data = this.enrichTransactions(transactions);
 
     return { data, total };
+  }
+
+  // 导出用：不分页返回全部交易，保证备份完整不会被 limit 静默截断。
+  getAllForExport(): TransactionWithDetails[] {
+    const transactions = db.prepare('SELECT * FROM transactions ORDER BY date, id').all() as Transaction[];
+    return this.enrichTransactions(transactions);
   }
 
   getById(id: number): TransactionWithDetails | undefined {
@@ -101,41 +108,44 @@ export class TransactionService {
     date: string;
     tag_ids?: number[];
   } & ImportMetadata): TransactionWithDetails {
-    const result = db.prepare(
-      `INSERT INTO transactions (
-        type,
-        amount,
-        category_id,
-        note,
-        date,
-        source,
-        source_transaction_id,
-        source_merchant_order_id,
-        source_category,
-        source_time,
-        payment_method,
-        source_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      data.type,
-      data.amount,
-      data.category_id,
-      data.note || null,
-      data.date,
-      data.source || null,
-      data.source_transaction_id || null,
-      data.source_merchant_order_id || null,
-      data.source_category || null,
-      data.source_time || null,
-      data.payment_method || null,
-      data.source_status || null
-    );
+    // 交易行与标签关联在同一事务内写入：任一步失败整体回滚，避免半写入（如标签外键失败时残留交易）。
+    const transactionId = db.transaction(() => {
+      const result = db.prepare(
+        `INSERT INTO transactions (
+          type,
+          amount,
+          category_id,
+          note,
+          date,
+          source,
+          source_transaction_id,
+          source_merchant_order_id,
+          source_category,
+          source_time,
+          payment_method,
+          source_status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        data.type,
+        data.amount,
+        data.category_id,
+        data.note || null,
+        data.date,
+        data.source || null,
+        data.source_transaction_id || null,
+        data.source_merchant_order_id || null,
+        data.source_category || null,
+        data.source_time || null,
+        data.payment_method || null,
+        data.source_status || null
+      );
 
-    const transactionId = result.lastInsertRowid as number;
-
-    if (data.tag_ids && data.tag_ids.length > 0) {
-      this.syncTransactionTags(transactionId, data.tag_ids);
-    }
+      const id = result.lastInsertRowid as number;
+      if (data.tag_ids && data.tag_ids.length > 0) {
+        this.syncTransactionTags(id, data.tag_ids);
+      }
+      return id;
+    })();
 
     return this.getById(transactionId)!;
   }
@@ -151,27 +161,30 @@ export class TransactionService {
     const existing = db.prepare('SELECT * FROM transactions WHERE id = ?').get(id) as Transaction | undefined;
     if (!existing) return null;
 
-    if (data.type) {
-      db.prepare('UPDATE transactions SET type = ? WHERE id = ?').run(data.type, id);
-    }
-    if (data.amount !== undefined) {
-      db.prepare('UPDATE transactions SET amount = ? WHERE id = ?').run(data.amount, id);
-    }
-    if (data.category_id !== undefined) {
-      db.prepare('UPDATE transactions SET category_id = ? WHERE id = ?').run(data.category_id, id);
-    }
-    if (data.note !== undefined) {
-      db.prepare('UPDATE transactions SET note = ? WHERE id = ?').run(data.note, id);
-    }
-    if (data.date) {
-      db.prepare('UPDATE transactions SET date = ? WHERE id = ?').run(data.date, id);
-    }
+    // 字段更新与标签同步在同一事务内：任一步失败整体回滚，避免旧标签被删但字段未更新等半状态。
+    db.transaction(() => {
+      if (data.type) {
+        db.prepare('UPDATE transactions SET type = ? WHERE id = ?').run(data.type, id);
+      }
+      if (data.amount !== undefined) {
+        db.prepare('UPDATE transactions SET amount = ? WHERE id = ?').run(data.amount, id);
+      }
+      if (data.category_id !== undefined) {
+        db.prepare('UPDATE transactions SET category_id = ? WHERE id = ?').run(data.category_id, id);
+      }
+      if (data.note !== undefined) {
+        db.prepare('UPDATE transactions SET note = ? WHERE id = ?').run(data.note, id);
+      }
+      if (data.date) {
+        db.prepare('UPDATE transactions SET date = ? WHERE id = ?').run(data.date, id);
+      }
 
-    db.prepare('UPDATE transactions SET updated_at = datetime("now") WHERE id = ?').run(id);
+      db.prepare("UPDATE transactions SET updated_at = datetime('now') WHERE id = ?").run(id);
 
-    if (data.tag_ids !== undefined) {
-      this.syncTransactionTags(id, data.tag_ids);
-    }
+      if (data.tag_ids !== undefined) {
+        this.syncTransactionTags(id, data.tag_ids);
+      }
+    })();
 
     return this.getById(id) ?? null;
   }
@@ -197,28 +210,29 @@ export class TransactionService {
     const params: any[] = [];
 
     if (start_date) {
-      whereClauses.push('date >= ?');
+      whereClauses.push('t.date >= ?');
       params.push(start_date);
     }
     if (end_date) {
-      whereClauses.push('date <= ?');
+      whereClauses.push('t.date <= ?');
       params.push(end_date);
     }
     if (type) {
-      whereClauses.push('type = ?');
+      whereClauses.push('t.type = ?');
       params.push(type);
     }
 
     const whereClause = whereClauses.length > 0 ? 'WHERE ' + whereClauses.join(' AND ') : '';
 
     const totalIncome = db.prepare(`
-      SELECT COALESCE(SUM(amount), 0) as total FROM transactions ${whereClause} ${whereClauses.length > 0 ? 'AND' : 'WHERE'} type = 'income'
+      SELECT COALESCE(SUM(t.amount), 0) as total FROM transactions t ${whereClause} ${whereClauses.length > 0 ? 'AND' : 'WHERE'} t.type = 'income'
     `).get(...params) as { total: number };
 
     const totalExpense = db.prepare(`
-      SELECT COALESCE(SUM(amount), 0) as total FROM transactions ${whereClause} ${whereClauses.length > 0 ? 'AND' : 'WHERE'} type = 'expense'
+      SELECT COALESCE(SUM(t.amount), 0) as total FROM transactions t ${whereClause} ${whereClauses.length > 0 ? 'AND' : 'WHERE'} t.type = 'expense'
     `).get(...params) as { total: number };
 
+    // 联表查询必须用 t. 前缀限定 type/date，避免与 categories 表的同名列产生歧义。
     const categoryStats = db.prepare(`
       SELECT c.name, c.icon, c.color, SUM(t.amount) as total
       FROM transactions t
@@ -229,26 +243,38 @@ export class TransactionService {
     `).all(...params) as { name: string; icon: string; color: string; total: number }[];
 
     const dailyStats = db.prepare(`
-      SELECT date, type, SUM(amount) as total
-      FROM transactions
+      SELECT t.date, t.type, SUM(t.amount) as total
+      FROM transactions t
       ${whereClause}
-      GROUP BY date, type
-      ORDER BY date
+      GROUP BY t.date, t.type
+      ORDER BY t.date
     `).all(...params) as { date: string; type: string; total: number }[];
 
+    const income = roundToCents(totalIncome.total);
+    const expense = roundToCents(totalExpense.total);
     return {
-      totalIncome: totalIncome.total,
-      totalExpense: totalExpense.total,
-      balance: totalIncome.total - totalExpense.total,
+      totalIncome: income,
+      totalExpense: expense,
+      balance: roundToCents(income - expense),
       categoryStats,
       dailyStats,
     };
   }
 
+  // 批量补全分类与标签：一次联查避免逐条 N+1，分类/标签按 id 分组后映射。
+  private enrichTransactions(transactions: Transaction[]): TransactionWithDetails[] {
+    if (transactions.length === 0) return [];
+    const categoryMap = categoryService.getByIds(transactions.map((transaction) => transaction.category_id));
+    const tagMap = tagService.getByTransactionIds(transactions.map((transaction) => transaction.id));
+    return transactions.map((transaction) => ({
+      ...transaction,
+      category: categoryMap.get(transaction.category_id)!,
+      tags: tagMap.get(transaction.id) || [],
+    }));
+  }
+
   private enrichTransaction(transaction: Transaction): TransactionWithDetails {
-    const category = categoryService.getById(transaction.category_id)!;
-    const tags = tagService.getByTransactionId(transaction.id);
-    return { ...transaction, category, tags };
+    return this.enrichTransactions([transaction])[0];
   }
 
   private syncTransactionTags(transactionId: number, tagIds: number[]): void {
@@ -263,3 +289,8 @@ export class TransactionService {
 }
 
 export const transactionService = new TransactionService();
+
+// 转义 LIKE 通配符，让用户搜索的 % 和 _ 按字面匹配而不是被当作通配符。
+function escapeLikeKeyword(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+}

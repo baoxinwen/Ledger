@@ -59,8 +59,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       set({ settings: nextSettings });
       return nextSettings;
     } catch (error) {
-      console.warn('设置接口暂时不可用，偏好已保存到本地兜底:', getErrorMessage(error));
-      return optimisticSettings;
+      console.warn('设置接口暂时不可用，已回读服务端设置:', getErrorMessage(error));
+      // 回读服务端设置，避免前端乐观更新与后端不一致；后端不可达时保持本地兜底。
+      await get().fetchSettings();
+      return get().settings;
     }
   },
 }));

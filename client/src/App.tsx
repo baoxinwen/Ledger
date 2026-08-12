@@ -1,11 +1,13 @@
-// 应用路由层：按页面懒加载业务模块，减少首次打开时的资源体积。
+// 应用路由层：按登录状态渲染登录页或业务模块，并按页面懒加载业务模块减少首屏体积。
 import { lazy, Suspense, useEffect } from 'react';
-import { ThemeProvider, CssBaseline, useMediaQuery } from '@mui/material';
+import { ThemeProvider, CssBaseline, useMediaQuery, Box, CircularProgress } from '@mui/material';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { lightTheme, darkTheme } from './theme';
 import MainLayout from './components/Layout/MainLayout';
 import GlobalSnackbar from './components/GlobalSnackbar';
+import AuthPage from './pages/AuthPage';
 import { useSettingsStore } from './stores/settingsStore';
+import { useAuthStore } from './stores/authStore';
 import {
   DashboardSkeleton,
   TransactionListSkeleton,
@@ -25,10 +27,13 @@ function App() {
   const settings = useSettingsStore((state) => state.settings);
   const fetchSettings = useSettingsStore((state) => state.fetchSettings);
   const updateSettings = useSettingsStore((state) => state.updateSettings);
+  const authStatus = useAuthStore((state) => state.status);
+  const checkAuth = useAuthStore((state) => state.checkAuth);
 
   useEffect(() => {
+    checkAuth();
     fetchSettings();
-  }, [fetchSettings]);
+  }, [checkAuth, fetchSettings]);
 
   const isDarkMode = settings.theme_mode === 'system'
     ? prefersDarkMode
@@ -45,15 +50,30 @@ function App() {
       <CssBaseline />
       <GlobalSnackbar />
       <BrowserRouter>
-        <MainLayout isDarkMode={isDarkMode} onThemeToggle={handleThemeToggle}>
-          <Routes>
-            <Route path="/" element={<Suspense fallback={<DashboardSkeleton />}><HomePage /></Suspense>} />
-            <Route path="/transactions" element={<Suspense fallback={<TransactionListSkeleton />}><TransactionsPage /></Suspense>} />
-            <Route path="/statistics" element={<Suspense fallback={<ChartSkeleton />}><StatisticsPage /></Suspense>} />
-            <Route path="/budgets" element={<Suspense fallback={<BudgetSkeleton />}><BudgetsPage /></Suspense>} />
-            <Route path="/settings" element={<Suspense fallback={<SettingsSkeleton />}><SettingsPage /></Suspense>} />
-          </Routes>
-        </MainLayout>
+        {authStatus === 'checking' ? (
+          <Box
+            sx={{
+              minHeight: '100vh',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <CircularProgress />
+          </Box>
+        ) : authStatus === 'authed' ? (
+          <MainLayout isDarkMode={isDarkMode} onThemeToggle={handleThemeToggle}>
+            <Routes>
+              <Route path="/" element={<Suspense fallback={<DashboardSkeleton />}><HomePage /></Suspense>} />
+              <Route path="/transactions" element={<Suspense fallback={<TransactionListSkeleton />}><TransactionsPage /></Suspense>} />
+              <Route path="/statistics" element={<Suspense fallback={<ChartSkeleton />}><StatisticsPage /></Suspense>} />
+              <Route path="/budgets" element={<Suspense fallback={<BudgetSkeleton />}><BudgetsPage /></Suspense>} />
+              <Route path="/settings" element={<Suspense fallback={<SettingsSkeleton />}><SettingsPage /></Suspense>} />
+            </Routes>
+          </MainLayout>
+        ) : (
+          <AuthPage isDarkMode={isDarkMode} onThemeToggle={handleThemeToggle} />
+        )}
       </BrowserRouter>
     </ThemeProvider>
   );

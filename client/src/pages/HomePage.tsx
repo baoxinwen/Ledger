@@ -13,7 +13,7 @@ import { PageHeader } from '../components/ui';
 import { formatYearMonth, getMonthRangeForDate } from '../utils/format';
 
 export default function HomePage() {
-  const { transactions, stats, fetchTransactions, fetchStats } = useTransactionStore();
+  const { transactions, stats, fetchRecentTransactions, fetchStats } = useTransactionStore();
   const { showSnackbar } = useSnackbarStore();
   const timeZone = useSettingsStore((state) => state.settings.time_zone);
   const today = useZonedToday(timeZone);
@@ -23,11 +23,11 @@ export default function HomePage() {
   useEffect(() => {
     Promise.all([
       fetchStats({ start_date: startDate, end_date: endDate }),
-      fetchTransactions({ page: 1, limit: 5, sort: 'date', order: 'desc' }),
+      fetchRecentTransactions(),
     ]).catch(() => {
       showSnackbar('加载数据失败，请刷新页面重试', 'error');
     });
-  }, [endDate, fetchStats, fetchTransactions, showSnackbar, startDate]);
+  }, [endDate, fetchRecentTransactions, fetchStats, showSnackbar, startDate]);
 
   return (
     <Box>

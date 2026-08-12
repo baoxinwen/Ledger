@@ -61,7 +61,7 @@ export default function QuickActions({ totalIncome, totalExpense }: QuickActions
               variant="contained"
               fullWidth
               startIcon={<AddIcon />}
-              onClick={() => navigate(ROUTES.TRANSACTIONS)}
+              onClick={() => navigate(ROUTES.TRANSACTIONS, { state: { openCreate: true } })}
               sx={{ justifyContent: 'flex-start', pl: 2.5 }}
             >
               记一笔

@@ -18,37 +18,11 @@ export function formatCompactAmount(amount: number): string {
 }
 
 /**
- * Format a date string to localized format
- */
-export function formatDate(dateStr: string, timeZone: string = DEFAULT_TIME_ZONE): string {
-  const plainDate = parsePlainDate(dateStr);
-  if (plainDate) {
-    return `${plainDate.year}/${pad2(plainDate.month)}/${pad2(plainDate.day)}`;
-  }
-
-  const date = new Date(dateStr);
-  if (isNaN(date.getTime())) {
-    return '—';
-  }
-  return date.toLocaleDateString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    timeZone: normalizeTimeZone(timeZone),
-  });
-}
-
-/**
  * Get current month date range
  */
 export function getCurrentMonthRange(timeZone: string = DEFAULT_TIME_ZONE, referenceDate: Date = new Date()): { startDate: string; endDate: string } {
   const { year, month } = getZonedDateParts(referenceDate, timeZone);
   return getMonthRangeForMonth(`${year}-${pad2(month)}`);
-}
-
-export function getCurrentMonth(timeZone: string = DEFAULT_TIME_ZONE, referenceDate: Date = new Date()): string {
-  const { year, month } = getZonedDateParts(referenceDate, timeZone);
-  return `${year}-${pad2(month)}`;
 }
 
 export function getTodayInTimeZone(timeZone: string = DEFAULT_TIME_ZONE, referenceDate: Date = new Date()): string {

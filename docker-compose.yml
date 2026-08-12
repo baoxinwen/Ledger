@@ -5,11 +5,16 @@ services:
     ports:
       - "3000:3000"
     volumes:
+      # 数据目录需允许容器内 node 用户（uid 1000）写入；若宿主 ./data 属主不是 1000，请先执行：chown -R 1000:1000 ./data
       - ./data:/app/server/data
     environment:
       - NODE_ENV=production
       - PORT=3000
       - TZ=Asia/Shanghai
+      # 部署在 Nginx 等反向代理后时，设为 true 让登录限流按真实客户端 IP 计数。
+      # - TRUST_PROXY=true
+      # HTTPS 部署时启用 Secure Cookie，会话 Cookie 只走加密连接。
+      # - COOKIE_SECURE=true
     logging:
       driver: json-file
       options:
