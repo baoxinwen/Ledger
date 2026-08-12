@@ -9,7 +9,18 @@ export class HttpError extends Error {
   }
 }
 
+// 提取错误消息。不依赖 instanceof：原生模块（better-sqlite3）的错误在部分环境（如 Jest worker 加载
+// 原生插件）可能跨 realm 导致 instanceof Error 失效，按消息分类更可靠。
+export function getErrorMessage(error: unknown): string {
+  if (typeof error === 'string') return error;
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string') return message;
+  }
+  return '';
+}
+
 // 识别 better-sqlite3 的外键约束违规（引用了不存在的分类/标签等），对调用方应返回 400。
 export function isForeignKeyError(error: unknown): boolean {
-  return error instanceof Error && /FOREIGN KEY constraint failed/i.test(error.message);
+  return /FOREIGN KEY constraint failed/i.test(getErrorMessage(error));
 }

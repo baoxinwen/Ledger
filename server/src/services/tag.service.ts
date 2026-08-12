@@ -2,6 +2,7 @@
 import db from '../database';
 import { Tag } from '../types';
 import { chunkArray } from '../utils/array';
+import { getErrorMessage } from '../utils/errors';
 
 export class TagService {
   getAll(): Tag[] {
@@ -25,7 +26,7 @@ export class TagService {
       return this.getById(result.lastInsertRowid as number)!;
     } catch (error) {
       // 并发创建同名标签时可能触发 UNIQUE 约束，返回既有标签而不是抛 500。
-      if (error instanceof Error && /UNIQUE constraint failed/i.test(error.message)) {
+      if (/UNIQUE constraint failed/i.test(getErrorMessage(error))) {
         const existingAfter = this.getByName(name);
         if (existingAfter) return existingAfter;
       }

@@ -1,6 +1,7 @@
 // 设置路由：提供应用级偏好配置，目前包含全局业务时区。
 import { Router, Request, Response } from 'express';
 import { settingsService } from '../services/settings.service';
+import { getErrorMessage } from '../utils/errors';
 
 const router = Router();
 
@@ -16,7 +17,7 @@ router.put('/', (req: Request, res: Response) => {
     }));
   } catch (error) {
     res.status(400).json({
-      error: error instanceof Error ? error.message : '保存设置失败',
+      error: getErrorMessage(error) || '保存设置失败',
     });
   }
 });
