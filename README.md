@@ -99,7 +99,7 @@ docker compose logs -f app
 - 会话有效期 30 天；退出登录后立即失效。
 - 如果通过 HTTPS 反向代理访问，在 `docker-compose.yml` 的 `environment` 中增加 `COOKIE_SECURE=true`，让会话 Cookie 只走 HTTPS。
 - 如果部署在 Nginx 等反向代理后，在 `docker-compose.yml` 的 `environment` 中增加 `TRUST_PROXY=true`，让登录限流按真实客户端 IP 计数（否则同一代理 IP 会被当作同一来源合并限流）。
-- 容器以非 root 用户（node，uid 1000）运行；若宿主 `./data` 目录属主不是 1000，首次迁移请执行 `chown -R 1000:1000 ./data`。
+- 容器以非 root 用户（node，uid 1000）运行；数据目录属主由容器 entrypoint 在启动时自动修正，从旧版本升级无需手动 `chown`。
 
 忘记密码：目前没有内置找回。需要停止服务后，用 SQLite 工具删除挂载卷 `./data/ledger.db` 中 `users` 和 `sessions` 表的数据，重启后应用会重新进入初始化流程。
 

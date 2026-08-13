@@ -5,7 +5,7 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      # 数据目录需允许容器内 node 用户（uid 1000）写入；若宿主 ./data 属主不是 1000，请先执行：chown -R 1000:1000 ./data
+      # 数据目录属主由容器 entrypoint 在启动时自动修正为 node（uid 1000），无需手动 chown。
       - ./data:/app/server/data
     environment:
       - NODE_ENV=production

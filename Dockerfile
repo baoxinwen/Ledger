@@ -31,14 +31,17 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV TZ=Asia/Shanghai
 
+# gosu：entrypoint 里用于把权限从 root 降到 node 用户（保留非 root 运行的安全收益）。
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends gosu \
+  && rm -rf /var/lib/apt/lists/*
+
 COPY server/package*.json ./server/
 COPY --from=build /app/server/node_modules ./server/node_modules
 COPY --from=build /app/server/dist ./server/dist
 COPY --from=build /app/client/dist ./client/dist
-
-# 以非 root 用户运行；数据目录归 node 用户（uid 1000）所有，便于绑定卷挂载。
-RUN mkdir -p /app/server/data && chown -R node:node /app/server/data
-USER node
+COPY server/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 3000
 
@@ -46,4 +49,6 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
+# entrypoint 以 root 启动，chown 数据目录后 gosu 降权到 node 用户运行应用。
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["node", "server/dist/index.js"]
