@@ -39,7 +39,8 @@ app.use((req: express.Request, res: express.Response, next: express.NextFunction
     "default-src 'self'",
     "script-src 'self'",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' https://fonts.gstatic.com",
+    // MUI 图标字体（Material Icons）以 data: URI 内联，需放行 data: 否则图标不显示。
+    "font-src 'self' https://fonts.gstatic.com data:",
     "img-src 'self' data:",
     "connect-src 'self'",
     "frame-ancestors 'none'",
