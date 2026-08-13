@@ -32,8 +32,15 @@ function App() {
 
   useEffect(() => {
     checkAuth();
-    fetchSettings();
-  }, [checkAuth, fetchSettings]);
+  }, [checkAuth]);
+
+  // 仅在已登录后拉取设置；未登录时 /api/settings 受保护会返回 401，
+  // 此时直接使用本地兜底的主题偏好，避免无意义的 401 报错。
+  useEffect(() => {
+    if (authStatus === 'authed') {
+      fetchSettings();
+    }
+  }, [authStatus, fetchSettings]);
 
   const isDarkMode = settings.theme_mode === 'system'
     ? prefersDarkMode

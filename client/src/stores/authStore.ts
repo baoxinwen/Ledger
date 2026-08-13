@@ -59,14 +59,21 @@ function applyAuthStatus(
   }
 }
 
-// 任何受保护接口返回 401（会话过期/未登录）时，自动把状态切回未登录，由路由门控回到登录页。
-// 登录接口自身的 401 不应触发，否则会在登录页反复横跳。
+// 受保护接口返回 401（会话过期）时，把状态切回未登录，由路由门控回到登录页。
+// 关键守卫：仅当「当前已登录（authed）」时才触发——否则首屏未登录时 fetchSettings 的 401
+// 会把「创建账户」状态错误地覆盖成「登录」状态（详见首屏注册界面被误显示为登录的问题）。
+// 登录接口自身的 401 同样不触发（避免在登录页反复横跳）。
 http.interceptors.response.use(
   (response) => response,
   (error) => {
     const url: string | undefined = error.config?.url;
     const status: number | undefined = error.response?.status;
-    if (status === 401 && url && !url.startsWith('/auth/')) {
+    if (
+      status === 401 &&
+      url &&
+      !url.startsWith('/auth/') &&
+      useAuthStore.getState().status === 'authed'
+    ) {
       useAuthStore.setState({ status: 'login', user: null });
     }
     return Promise.reject(error);
