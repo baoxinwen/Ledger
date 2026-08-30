@@ -13,6 +13,13 @@ const MAX_XLSX_ENTRY_BYTES = 50 * 1024 * 1024;
 const MAX_XLSX_TOTAL_BYTES = 100 * 1024 * 1024;
 // 条目数量上限，防止海量小条目拖垮解析。
 const MAX_XLSX_ENTRIES = 1000;
+// 单元格引用合法性：形如 A1 / XFD1048576 的「列字母(1-3 位)+行号」。
+const CELL_REF_PATTERN = /^([A-Za-z]{1,3})([1-9]\d*)$/;
+// XLSX 规范最大列数（最后一列为 XFD，即第 16384 列）。
+// 不设防时恶意超长列名会令稀疏数组长度爆炸（cells[hugeIndex] 后 map 分配 GB 级内存）。
+const MAX_XLSX_COLUMN_COUNT = 16384;
+// 与手动创建接口的金额上限保持一致（utils/validation.ts 的 MAX_AMOUNT）。
+const MAX_IMPORT_AMOUNT = 1e12;
 
 type ImportSource = 'standard' | 'alipay' | 'wechat';
 export type FileImportSource = ImportSource | 'auto';
@@ -49,7 +56,7 @@ export class BillImportService {
     // 标准导入和第三方账单最终都会走这条路径，因此这里集中处理校验、去重、建类和入库。
     transactions.forEach((transaction, index) => {
       try {
-        const validationErrors = validateTransaction(transaction);
+        const validationErrors = validateImportTransaction(transaction);
         if (validationErrors.length > 0) {
           const reason = validationErrors.join('；');
           result.failed++;
@@ -68,7 +75,7 @@ export class BillImportService {
           return;
         }
 
-        const categoryName = normalizeCategoryName(transaction.category);
+        const categoryName = normalizeImportCategoryName(transaction.category);
         const categoryKey = `${transaction.type}:${categoryName}`;
         let category = categoryService.getByNameAndType(categoryName, transaction.type);
         if (!category) {
@@ -487,7 +494,7 @@ function validateParsedRow(sourceTime: string, amount: number): string[] {
   return errors;
 }
 
-function validateTransaction(transaction: ImportableTransaction): string[] {
+export function validateImportTransaction(transaction: ImportableTransaction): string[] {
   const errors: string[] = [];
   if (transaction.type !== 'income' && transaction.type !== 'expense') {
     errors.push('类型必须是收入或支出');
@@ -496,12 +503,37 @@ function validateTransaction(transaction: ImportableTransaction): string[] {
     errors.push('金额无法解析');
   } else if (transaction.amount < 0) {
     errors.push('金额不能为负数');
+  } else if (!Number.isInteger(Math.round(transaction.amount * 1000000) / 10000)) {
+    errors.push('金额最多保留两位小数');
+  } else if (transaction.amount > MAX_IMPORT_AMOUNT) {
+    errors.push('金额过大，超出允许范围');
   }
   if (!transaction.category?.trim()) {
     errors.push('分类为空');
+  } else if (transaction.category.trim().length > 64) {
+    // 与手动创建接口（requireName 64）对齐：导入不应能绕过长度约束写入超长分类。
+    errors.push('分类名称长度不能超过 64 个字符');
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(transaction.date)) {
     errors.push('日期格式无效，应为 YYYY-MM-DD');
+  }
+  if ((transaction.note ?? '').length > 2000) {
+    // 与手动创建接口（optionalString 默认 2000）对齐。
+    errors.push('备注长度不能超过 2000 个字符');
+  }
+  if ((transaction.tags || []).some((tag) => tag.length > 64)) {
+    errors.push('标签长度不能超过 64 个字符');
+  }
+  const overlyLongMetadata = [
+    transaction.source_transaction_id,
+    transaction.source_merchant_order_id,
+    transaction.source_category,
+    transaction.source_time,
+    transaction.payment_method,
+    transaction.source_status,
+  ].find((value) => (value ?? '').length > 200);
+  if (overlyLongMetadata) {
+    errors.push('来源信息字段长度不能超过 200 个字符');
   }
   return errors;
 }
@@ -514,7 +546,7 @@ function createRawDiagnostic(
   row: number,
   raw: Record<string, unknown>
 ): ImportDiagnostic {
-  // raw 保留完整原始字段；用户明确选择完整诊断日志，所以这里不做脱敏。
+  // raw 仅供服务内部定位解析问题；预览与历史响应会在 importWorkflow 边界统一脱敏。
   return {
     level,
     outcome,
@@ -574,7 +606,7 @@ function extractRawMerchantOrderId(raw: Record<string, unknown>, source: ImportS
   return normalizeOrderId(raw[key]) || undefined;
 }
 
-function normalizeCategoryName(category: string): string {
+export function normalizeImportCategoryName(category: string): string {
   return normalizeValue(category) || '其他';
 }
 
@@ -644,7 +676,8 @@ function parseFirstWorksheet(buffer: Buffer): string[][] {
       const body = cellMatch[2];
       const ref = getXmlAttribute(attrs, 'r');
       const type = getXmlAttribute(attrs, 't');
-      const columnIndex = ref ? columnNameToIndex(ref.replace(/\d+/g, '')) : cells.length;
+      // 引用必须形如 A1/XFD1048576；恶意超长列名会让稀疏数组长度爆炸，直接拒绝整个文件。
+      const columnIndex = ref ? parseCellColumnIndex(ref) : cells.length;
       cells[columnIndex] = parseCellValue(body, type, sharedStrings);
     }
     rows.push(cells.map((cell) => cell || ''));
@@ -763,8 +796,21 @@ function decodeXml(value: string): string {
     .replace(/&apos;/g, "'");
 }
 
-function columnNameToIndex(columnName: string): number {
-  return columnName.split('').reduce((index, char) => index * 26 + char.charCodeAt(0) - 64, 0) - 1;
+// 解析单元格引用中的列号（A=1 起算的 26 进制，返回 0 基索引）。
+// 只接受 1-3 位列字母 + 非零行号，且列号不得超过 XLSX 规范上限（16384 列）。
+function parseCellColumnIndex(ref: string): number {
+  const match = CELL_REF_PATTERN.exec(ref);
+  if (!match) {
+    throw new Error(`XLSX 单元格引用无效: ${ref}`);
+  }
+  const letters = match[1].toUpperCase();
+  const columnIndex = letters
+    .split('')
+    .reduce((index, char) => index * 26 + char.charCodeAt(0) - 64, 0) - 1;
+  if (columnIndex < 0 || columnIndex >= MAX_XLSX_COLUMN_COUNT) {
+    throw new Error(`XLSX 列引用超出范围: ${ref}`);
+  }
+  return columnIndex;
 }
 
 export const billImportService = new BillImportService();

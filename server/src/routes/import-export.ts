@@ -1,206 +1,219 @@
-// 导入导出路由：处理文件上传、标准 JSON 导入和账本数据导出。
+// 数据导入导出路由：便携式导出与“预览 -> 确认 -> 历史/撤销”导入流程。
 import { Router, Request, Response } from 'express';
 import { transactionService } from '../services/transaction.service';
-import { billImportService, FileImportSource } from '../services/billImport.service';
-import { ImportableTransaction } from '../types';
+import { FileImportSource } from '../services/billImport.service';
+import { importWorkflowService } from '../services/importWorkflow.service';
 import { logger } from '../utils/logger';
 import { buildLedgerCsv } from '../utils/csv';
+import { parseMultipartToMemory } from '../utils/multipart';
+import { optionalPositiveId, requirePositiveId } from '../utils/validation';
+import { HttpError } from '../utils/errors';
+import { AuthenticatedRequest } from '../middleware/auth';
+import { ImportOutcome, ImportSelectionUpdate, ImportTransactionType } from '../services/importWorkflow.service';
 
 const router = Router();
+const MAX_IMPORT_BYTES = 50 * 1024 * 1024;
 
-// 导入导出路由既服务浏览器下载，也承担文件上传入口；这里的日志会直接进入 Docker stdout。
 router.get('/export', (req: Request, res: Response) => {
   const format = (req.query.format as 'json' | 'csv') || 'json';
-
-  // 导出走完整备份语义，不分页，避免超过默认 limit 时静默截断。
   const data = transactionService.getAllForExport();
-
   if (format === 'csv') {
-    const content = buildLedgerCsv(data);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename=ledger-export.csv');
-    res.send(content);
-  } else {
-    const exportData = {
-      transactions: data.map(t => ({
-        date: t.date,
-        type: t.type,
-        category: t.category.name,
-        amount: t.amount,
-        tags: t.tags.map(tag => tag.name),
-        note: t.note,
-        source: t.source,
-        source_transaction_id: t.source_transaction_id,
-        source_merchant_order_id: t.source_merchant_order_id,
-        source_category: t.source_category,
-        source_time: t.source_time,
-        payment_method: t.payment_method,
-        source_status: t.source_status,
-      })),
-    };
+    res.send(buildLedgerCsv(data));
+    return;
+  }
 
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Content-Disposition', 'attachment; filename=ledger-export.json');
-    res.json(exportData);
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', 'attachment; filename=ledger-export.json');
+  res.json({
+    transactions: data.map((transaction) => ({
+      date: transaction.date,
+      type: transaction.type,
+      category: transaction.category.name,
+      amount: transaction.amount,
+      tags: transaction.tags.map((tag) => tag.name),
+      note: transaction.note,
+      source: transaction.source,
+      source_transaction_id: transaction.source_transaction_id,
+      source_merchant_order_id: transaction.source_merchant_order_id,
+      source_category: transaction.source_category,
+      source_time: transaction.source_time,
+      payment_method: transaction.payment_method,
+      source_status: transaction.source_status,
+    })),
+  });
+});
+
+router.post('/import/preview', async (req: Request, res: Response) => {
+  const startedAt = Date.now();
+  try {
+    const upload = await parseMultipartToMemory(req, MAX_IMPORT_BYTES);
+    if (!upload.file) return res.status(400).json({ error: '请选择导入文件' });
+    const preview = importWorkflowService.previewFile(
+      upload.file.buffer,
+      upload.file.filename,
+      normalizeSource(upload.fields.source),
+      (req as AuthenticatedRequest).auth.id
+    );
+    logImportEvent('账单导入预览完成', {
+      filename: upload.file.filename,
+      source: preview.source,
+      durationMs: Date.now() - startedAt,
+      counts: preview.counts,
+    });
+    res.json(preview);
+  } catch (error) {
+    logImportEvent('账单导入预览失败', { durationMs: Date.now() - startedAt, error: getErrorMessage(error) }, 'error');
+    sendImportError(res, error);
   }
 });
 
-router.post('/import/file', async (req: Request, res: Response) => {
+router.get('/import/preview/:previewId/rows', (req: Request, res: Response) => {
+  try {
+    res.json(importWorkflowService.getPreviewRows(
+      routeParam(req.params.previewId),
+      (req as AuthenticatedRequest).auth.id,
+      {
+        outcome: normalizeOutcome(req.query.outcome),
+        type: normalizeTransactionType(req.query.type),
+        page: optionalPositiveId(req.query.page, '页码'),
+        limit: optionalPositiveId(req.query.limit, '每页条数'),
+      }
+    ));
+  } catch (error) {
+    sendImportError(res, error);
+  }
+});
+
+router.patch('/import/preview/:previewId/selection', (req: Request, res: Response) => {
+  try {
+    const body = req.body as Record<string, unknown>;
+    const action = body.action;
+    if (action !== 'select' && action !== 'deselect') throw new HttpError(400, '选择操作无效');
+    let update: ImportSelectionUpdate;
+    if (Array.isArray(body.rowKeys)) {
+      if (!body.rowKeys.every((key) => typeof key === 'string' && key.length > 0)) {
+        throw new HttpError(400, '预览记录标识无效');
+      }
+      update = { action, rowKeys: body.rowKeys as string[] };
+    } else if (body.filter && typeof body.filter === 'object') {
+      const filter = body.filter as Record<string, unknown>;
+      update = {
+        action,
+        filter: {
+          outcome: normalizeOutcome(filter.outcome),
+          type: normalizeTransactionType(filter.type),
+        },
+      };
+    } else {
+      throw new HttpError(400, '请选择记录或筛选范围');
+    }
+    res.json(importWorkflowService.updateSelection(
+      routeParam(req.params.previewId),
+      (req as AuthenticatedRequest).auth.id,
+      update
+    ));
+  } catch (error) {
+    sendImportError(res, error);
+  }
+});
+
+router.delete('/import/preview/:previewId', (req: Request, res: Response) => {
+  importWorkflowService.deletePreview(routeParam(req.params.previewId), (req as AuthenticatedRequest).auth.id);
+  res.status(204).end();
+});
+
+router.post('/import/confirm', async (req: Request, res: Response) => {
   const startedAt = Date.now();
   try {
-    const upload = await parseMultipartRequest(req);
-    if (!upload.file) {
-      return res.status(400).json({ error: 'File is required' });
-    }
-
-    const source = normalizeSource(upload.fields.source);
-    logImportEvent('账单文件导入开始', {
+    const upload = await parseMultipartToMemory(req, MAX_IMPORT_BYTES);
+    if (!upload.file) return res.status(400).json({ error: '请选择导入文件' });
+    if (!upload.fields.previewId) return res.status(400).json({ error: '导入预览标识不能为空' });
+    const result = importWorkflowService.confirmFile(
+      upload.file.buffer,
+      upload.file.filename,
+      normalizeSource(upload.fields.source),
+      upload.fields.previewId,
+      (req as AuthenticatedRequest).auth.id
+    );
+    logImportEvent('账单导入确认完成', {
       filename: upload.file.filename,
-      requestedSource: upload.fields.source || 'auto',
-      normalizedSource: source,
-      contentType: upload.file.contentType,
-      size: upload.file.buffer.length,
-    });
-    const result = billImportService.importFile(upload.file.buffer, upload.file.filename, source);
-    logImportEvent('账单文件导入完成', {
-      filename: upload.file.filename,
-      source,
+      source: result.batch.source,
+      batchId: result.batch.id,
+      success: result.success,
       durationMs: Date.now() - startedAt,
-      result,
     });
     res.json(result);
   } catch (error) {
-    logImportEvent('账单文件导入失败', {
-      durationMs: Date.now() - startedAt,
-      error: (error as Error).message,
-    }, 'error');
-    res.status(400).json({ error: (error as Error).message });
+    logImportEvent('账单导入确认失败', { durationMs: Date.now() - startedAt, error: getErrorMessage(error) }, 'error');
+    sendImportError(res, error);
   }
 });
 
-router.post('/import', (req: Request, res: Response) => {
-  const startedAt = Date.now();
-  const { transactions } = req.body;
-
-  if (!transactions || !Array.isArray(transactions)) {
-    return res.status(400).json({ error: 'Invalid import data' });
-  }
-
-  logImportEvent('标准交易导入开始', {
-    count: transactions.length,
-  });
-  const result = billImportService.importTransactions(transactions as ImportableTransaction[]);
-  logImportEvent('标准交易导入完成', {
-    durationMs: Date.now() - startedAt,
-    result,
-  });
-  res.json(result);
+router.get('/import/history', (req: Request, res: Response) => {
+  const page = optionalPositiveId(req.query.page, '页码') ?? 1;
+  const limit = optionalPositiveId(req.query.limit, '每页条数') ?? 20;
+  res.json(importWorkflowService.getHistory(page, limit));
 });
 
-interface UploadedFile {
-  filename: string;
-  contentType: string;
-  buffer: Buffer;
-}
-
-interface MultipartUpload {
-  fields: Record<string, string>;
-  file?: UploadedFile;
-}
-
-async function parseMultipartRequest(req: Request): Promise<MultipartUpload> {
-  const contentType = req.headers['content-type'] || '';
-  const boundaryMatch = /boundary=(?:"([^"]+)"|([^;]+))/i.exec(contentType);
-  if (!boundaryMatch) {
-    throw new Error('Multipart boundary not found');
-  }
-
-  const body = await readRequestBody(req);
-  const boundary = Buffer.from(`--${boundaryMatch[1] || boundaryMatch[2]}`, 'utf8');
-  const upload: MultipartUpload = { fields: {} };
-  let cursor = body.indexOf(boundary);
-
-  while (cursor !== -1) {
-    const partStart = cursor + boundary.length;
-    if (body.subarray(partStart, partStart + 2).toString('utf8') === '--') break;
-
-    let contentStart = partStart;
-    if (body.subarray(contentStart, contentStart + 2).toString('utf8') === '\r\n') {
-      contentStart += 2;
-    }
-
-    const nextBoundary = body.indexOf(boundary, contentStart);
-    if (nextBoundary === -1) break;
-
-    const part = body.subarray(contentStart, Math.max(contentStart, nextBoundary - 2));
-    const separator = part.indexOf(Buffer.from('\r\n\r\n', 'utf8'));
-    if (separator !== -1) {
-      const rawHeaders = part.subarray(0, separator).toString('utf8');
-      const content = part.subarray(separator + 4);
-      const disposition = parseContentDisposition(rawHeaders);
-      const contentTypeMatch = /content-type:\s*([^\r\n]+)/i.exec(rawHeaders);
-
-      if (disposition.name === 'file' && disposition.filename) {
-        upload.file = {
-          filename: disposition.filename,
-          contentType: contentTypeMatch?.[1]?.trim() || 'application/octet-stream',
-          buffer: content,
-        };
-      } else if (disposition.name) {
-        upload.fields[disposition.name] = content.toString('utf8').trim();
-      }
-    }
-
-    cursor = nextBoundary;
-  }
-
-  return upload;
-}
-
-const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 账单上传文件上限 50MB
-
-// 流式收集请求体并限制总大小，防止超大上传耗尽内存。
-function readRequestBody(req: Request): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let received = 0;
-    req.on('data', (chunk: Buffer) => {
-      received += chunk.length;
-      if (received > MAX_UPLOAD_BYTES) {
-        reject(new Error(`上传文件过大，最大支持 ${MAX_UPLOAD_BYTES / 1024 / 1024}MB`));
-        req.destroy();
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on('end', () => resolve(Buffer.concat(chunks)));
-    req.on('error', reject);
-  });
-}
-
-function parseContentDisposition(headers: string): { name?: string; filename?: string } {
-  const disposition = /content-disposition:[^\r\n]+/i.exec(headers)?.[0] || '';
-  return {
-    name: /name="([^"]+)"/i.exec(disposition)?.[1],
-    filename: /filename="([^"]*)"/i.exec(disposition)?.[1],
-  };
-}
+router.post('/import/history/:id/undo', (req: Request, res: Response) => {
+  const id = requirePositiveId(req.params.id, '导入批次');
+  res.json(importWorkflowService.undo(id));
+});
 
 function normalizeSource(value: string | undefined): FileImportSource {
-  if (value === 'standard' || value === 'alipay' || value === 'wechat' || value === 'auto') {
+  return value === 'standard' || value === 'alipay' || value === 'wechat' || value === 'auto'
+    ? value
+    : 'auto';
+}
+
+function routeParam(value: string | string[]): string {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function normalizeOutcome(value: unknown): ImportOutcome | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (value === 'ready' || value === 'hard_duplicate' || value === 'content_duplicate' || value === 'skipped' || value === 'failed') {
     return value;
   }
-  return 'auto';
+  throw new HttpError(400, '处理结果筛选无效');
+}
+
+function normalizeTransactionType(value: unknown): ImportTransactionType | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (value === 'income' || value === 'expense') return value;
+  throw new HttpError(400, '收支类型筛选无效');
+}
+
+function sendImportError(res: Response, error: unknown): void {
+  if (error instanceof HttpError) {
+    res.status(error.status).json({ error: getErrorMessage(error) });
+    return;
+  }
+  // 系统级错误（SQLite/文件系统）按 500 处理且不泄露内部信息（此前一切错误压成 400 并透传原文）；
+  // 其余视为解析/输入问题，保留可操作的原文案。调用方已把完整错误写入服务端日志。
+  if (isInternalSystemError(error)) {
+    res.status(500).json({ error: '服务器内部错误' });
+    return;
+  }
+  res.status(400).json({ error: getErrorMessage(error) });
+}
+
+// 系统级错误识别：better-sqlite3 抛 SqliteError，文件系统错误带 errno code。
+function isInternalSystemError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return error.name === 'SqliteError' || typeof (error as NodeJS.ErrnoException).code === 'string';
 }
 
 function logImportEvent(message: string, details: Record<string, unknown>, level: 'info' | 'error' = 'info'): void {
-  // 结构化输出：开发环境打印元数据，生产环境 winston 展开为扁平 JSON 字段，便于采集检索。
   const payload = { scope: 'import', ...details };
-  if (level === 'error') {
-    logger.error(message, payload);
-  } else {
-    logger.info(message, payload);
-  }
+  if (level === 'error') logger.error(message, payload);
+  else logger.info(message, payload);
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export default router;

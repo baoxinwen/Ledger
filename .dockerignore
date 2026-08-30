@@ -4,12 +4,14 @@
 README.md
 docs
 data
+backups
 **/node_modules
 **/dist
 **/test-results
 **/playwright-report
 client/.vite
 server/data
+server/backups
 *.log
 .env
 .env.*

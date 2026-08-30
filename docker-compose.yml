@@ -5,16 +5,21 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      # 数据目录属主由容器 entrypoint 在启动时自动修正为 node（uid 1000），无需手动 chown。
+      # 数据和备份目录属主由容器 entrypoint 在启动时自动修正为 node（uid 1000），无需手动 chown。
       - ./data:/app/server/data
+      - ./backups:/app/server/backups
     environment:
       - NODE_ENV=production
       - PORT=3000
       - TZ=Asia/Shanghai
-      # 部署在 Nginx 等反向代理后时，设为 true 让登录限流按真实客户端 IP 计数。
-      # - TRUST_PROXY=true
+      # 部署在 Nginx 等反向代理后时设置可信代理，推荐用反代层数（如 1）而非 true：
+      # 信任全部跳数（true）时若 3000 端口可被绕过反代直连，攻击者能伪造 X-Forwarded-For 重置登录限流。
+      # - TRUST_PROXY=1
       # HTTPS 部署时启用 Secure Cookie，会话 Cookie 只走加密连接。
       # - COOKIE_SECURE=true
+    security_opt:
+      # entrypoint 以 root 启动后经 gosu 降权到 node，禁止进程再获取额外特权。
+      - no-new-privileges:true
     logging:
       driver: json-file
       options:

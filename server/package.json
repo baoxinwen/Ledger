@@ -4,7 +4,7 @@
   "description": "Personal ledger application backend",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
     "watch": "nodemon --exec ts-node src/index.ts",
@@ -16,6 +16,7 @@
   "license": "MIT",
   "dependencies": {
     "better-sqlite3": "^12.11.1",
+    "busboy": "^1.6.0",
     "express": "^5.2.1",
     "iconv-lite": "^0.7.2",
     "morgan": "^1.11.0",
@@ -23,6 +24,7 @@
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
+    "@types/busboy": "^1.5.4",
     "@types/express": "^5.0.6",
     "@types/jest": "^30.0.0",
     "@types/morgan": "^1.9.10",

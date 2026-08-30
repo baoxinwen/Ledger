@@ -8,6 +8,8 @@ playwright-report/
 coverage/
 *.tsbuildinfo
 .codex-runtime/
+.zcode/
+screenshots/
 *.log
 .DS_Store
 .env
@@ -16,3 +18,5 @@ coverage/
 .env.test.local
 .env.production.local
 data/
+backups/
+server/backups/

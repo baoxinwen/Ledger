@@ -78,7 +78,7 @@ describe('BillImportService', () => {
       }),
     ]));
 
-    const transactions = db.prepare('SELECT * FROM transactions ORDER BY amount').all() as any[];
+    const transactions = db.prepare('SELECT *, amount_cents / 100.0 AS amount FROM transactions ORDER BY amount_cents').all() as any[];
     expect(transactions).toHaveLength(3);
     const milkTea = transactions.find((transaction) => transaction.source_transaction_id === '2026010112001417190556296001');
     const zeroAmount = transactions.find((transaction) => transaction.source_transaction_id === 'skip3');
@@ -195,6 +195,40 @@ describe('BillImportService', () => {
     expect(() => extractZipFiles(zip, { maxEntries: 5 })).toThrow('条目过多');
   });
 
+  it('rejects malicious oversized XLSX column references instead of blowing up memory', () => {
+    // 超长列名（AAAAAA ≈ 一千二百多万列）曾令 cells[hugeIndex] 稀疏数组 + map 分配 GB 级内存。
+    const sheetXml = '<?xml version="1.0" encoding="UTF-8"?><worksheet><sheetData>'
+      + '<row r="1"><c r="AAAAAA1" t="inlineStr"><is><t>x</t></is></c></row>'
+      + '</sheetData></worksheet>';
+    const zip = createZip({
+      'xl/worksheets/sheet1.xml': sheetXml,
+    });
+    expect(() => parseWechatBill(zip)).toThrow(/XLSX (列引用超出范围|单元格引用无效)/);
+  });
+
+  it('rejects malformed XLSX cell references', () => {
+    const sheetXml = '<?xml version="1.0" encoding="UTF-8"?><worksheet><sheetData>'
+      + '<row r="1"><c r="A1B2" t="inlineStr"><is><t>x</t></is></c></row>'
+      + '</sheetData></worksheet>';
+    const zip = createZip({
+      'xl/worksheets/sheet1.xml': sheetXml,
+    });
+    expect(() => parseWechatBill(zip)).toThrow('XLSX 单元格引用无效');
+  });
+
+  it('接受规范内最后一列（XFD），拒绝超出规范的列（XFE）', () => {
+    const buildSheet = (ref: string) =>
+      '<?xml version="1.0" encoding="UTF-8"?><worksheet><sheetData>'
+      + `<row r="1"><c r="${ref}" t="inlineStr"><is><t>v</t></is></c></row>`
+      + '</sheetData></worksheet>';
+    const buildZip = (sheet: string) => createZip({ 'xl/worksheets/sheet1.xml': sheet });
+
+    // XFD 是规范内最后一列：引用解析通过（随后因找不到表头抛出业务错误）。
+    expect(() => parseWechatBill(buildZip(buildSheet('XFD1')))).toThrow('WeChat header row not found');
+    // XFE 已超出 16384 列上限。
+    expect(() => parseWechatBill(buildZip(buildSheet('XFE1')))).toThrow('XLSX 列引用超出范围');
+  });
+
   it('supports UTF-8 encoded Alipay CSV (auto detect and parse with the detected encoding)', () => {
     const csv = [
       '交易时间,交易分类,交易对方,对方账号,商品说明,收/支,金额,收/付款方式,交易状态,交易订单号,商家订单号,备注,',
@@ -225,6 +259,18 @@ describe('BillImportService', () => {
     expect(isUniqueConstraintError(new Error('UNIQUE constraint failed: tags.name'))).toBe(true);
     expect(isUniqueConstraintError(new Error('FOREIGN KEY constraint failed'))).toBe(false);
     expect(isUniqueConstraintError(new Error('other error'))).toBe(false);
+  });
+
+  it('标准导入对超长字段报错而不是原样入库', () => {
+    const transactions = parseStandardJson(JSON.stringify([
+      { type: 'expense', amount: 12.5, category: '餐饮', date: '2026-01-01', note: '长'.repeat(2001) },
+      { type: 'expense', amount: 12.5, category: '类'.repeat(65), date: '2026-01-02' },
+    ]));
+    const result = billImportService.importTransactions(transactions);
+    expect(result.failed).toBe(2);
+    expect(result.success).toBe(0);
+    expect(result.errors[0]).toContain('备注长度不能超过 2000 个字符');
+    expect(result.errors[1]).toContain('分类名称长度不能超过 64 个字符');
   });
 
   it('标准 CSV 表头带前缀（如“交易日期”“交易类型”）时仍能正确解析', () => {

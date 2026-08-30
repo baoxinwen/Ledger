@@ -5,6 +5,7 @@ import fs from 'fs';
 import { repairCategoryColors } from './utils/categoryColor';
 import { getDefaultAppTimeZone } from './utils/timeZone';
 import { getDefaultThemeMode } from './utils/themeMode';
+import { migrateDatabase } from './databaseSchema';
 
 const dataDir = path.join(__dirname, '..', 'data');
 if (!fs.existsSync(dataDir)) {
@@ -12,125 +13,48 @@ if (!fs.existsSync(dataDir)) {
 }
 
 // LEDGER_DB_PATH 用于让测试/e2e 指向隔离的临时数据库；未设置时默认使用挂载卷内的账本文件。
-const dbPath = process.env.LEDGER_DB_PATH
+export const dbPath = process.env.LEDGER_DB_PATH
   ? path.resolve(process.env.LEDGER_DB_PATH)
   : path.join(dataDir, 'ledger.db');
-const db: DatabaseType = new Database(dbPath);
+let currentDb: DatabaseType = openDatabase(dbPath);
 
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+// 服务统一持有稳定代理；恢复数据库时只替换代理背后的连接，现有 service 无需重新实例化。
+const db: DatabaseType = new Proxy({} as DatabaseType, {
+  get(_target, property) {
+    const value = Reflect.get(currentDb, property);
+    return typeof value === 'function' ? value.bind(currentDb) : value;
+  },
+  set(_target, property, value) {
+    return Reflect.set(currentDb, property, value);
+  },
+});
+
+function openDatabase(filename: string): DatabaseType {
+  const database = new Database(filename);
+  database.pragma('journal_mode = WAL');
+  database.pragma('foreign_keys = ON');
+  return database;
+}
+
+export function getDatabase(): DatabaseType {
+  return currentDb;
+}
+
+export function closeDatabase(): void {
+  if (currentDb.open) currentDb.close();
+}
+
+export function reopenDatabase(): DatabaseType {
+  if (currentDb.open) currentDb.close();
+  currentDb = openDatabase(dbPath);
+  return currentDb;
+}
 
 export function initDatabase(): void {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS categories (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      type TEXT NOT NULL CHECK(type IN ('income', 'expense')),
-      icon TEXT,
-      color TEXT,
-      is_preset INTEGER DEFAULT 0,
-      sort_order INTEGER DEFAULT 0
-    );
-
-    CREATE TABLE IF NOT EXISTS transactions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      type TEXT NOT NULL CHECK(type IN ('income', 'expense')),
-      amount REAL NOT NULL,
-      category_id INTEGER NOT NULL,
-      note TEXT,
-      date TEXT NOT NULL,
-      source TEXT,
-      source_transaction_id TEXT,
-      source_merchant_order_id TEXT,
-      source_category TEXT,
-      source_time TEXT,
-      payment_method TEXT,
-      source_status TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (category_id) REFERENCES categories(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS tags (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL UNIQUE
-    );
-
-    CREATE TABLE IF NOT EXISTS transaction_tags (
-      transaction_id INTEGER NOT NULL,
-      tag_id INTEGER NOT NULL,
-      PRIMARY KEY (transaction_id, tag_id),
-      FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE CASCADE,
-      FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS budgets (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      category_id INTEGER,
-      amount REAL NOT NULL,
-      period TEXT NOT NULL CHECK(period IN ('monthly', 'yearly')),
-      start_date TEXT NOT NULL,
-      FOREIGN KEY (category_id) REFERENCES categories(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS app_settings (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      updated_at TEXT DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL,
-      created_at TEXT DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS sessions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      token_hash TEXT NOT NULL UNIQUE,
-      expires_at TEXT NOT NULL,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
-    CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type);
-    CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id);
-  `);
-
-  migrateTransactionImportColumns();
+  migrateDatabase(getDatabase());
   seedAppSettings();
   seedCategories();
   repairStoredCategoryColors();
-}
-
-function migrateTransactionImportColumns(): void {
-  const columns = db.prepare('PRAGMA table_info(transactions)').all() as { name: string }[];
-  const existingColumns = new Set(columns.map((column) => column.name));
-  const importColumns = [
-    'source TEXT',
-    'source_transaction_id TEXT',
-    'source_merchant_order_id TEXT',
-    'source_category TEXT',
-    'source_time TEXT',
-    'payment_method TEXT',
-    'source_status TEXT',
-  ];
-
-  importColumns.forEach((definition) => {
-    const columnName = definition.split(' ')[0];
-    if (!existingColumns.has(columnName)) {
-      db.prepare(`ALTER TABLE transactions ADD COLUMN ${definition}`).run();
-    }
-  });
-
-  db.exec(`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_source_unique
-      ON transactions(source, source_transaction_id)
-      WHERE source IS NOT NULL AND source_transaction_id IS NOT NULL;
-  `);
 }
 
 function seedAppSettings(): void {

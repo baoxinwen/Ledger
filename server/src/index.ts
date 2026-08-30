@@ -5,6 +5,7 @@ import db from './database';
 import { logger } from './utils/logger';
 import { authService } from './services/auth.service';
 import app from './app';
+import { backupService } from './services/backup.service';
 
 process.on('uncaughtException', (err) => {
   logger.error(`Uncaught Exception: ${err.message}`, { stack: err.stack });
@@ -20,8 +21,14 @@ process.on('unhandledRejection', (reason) => {
 const PORT = Number(process.env.PORT) || 3000;
 
 try {
+  // 先检测中断的恢复流程（主库缺失 + rollback 残留时回滚），再打开数据库，
+  // 避免启动逻辑对缺失的库文件"无感新建空账本"。
+  backupService.recoverInterruptedRestore();
   initDatabase();
   authService.ensureSetupToken();
+  backupService.startAutomaticBackups((error) => {
+    logger.error(`自动备份失败: ${error instanceof Error ? error.message : String(error)}`);
+  });
   logger.info('Database initialized successfully');
 } catch (err) {
   logger.error(`Failed to initialize database: ${err instanceof Error ? err.message : String(err)}`);
@@ -41,6 +48,7 @@ server.on('error', (err) => {
 // 优雅关闭：停止接收新连接 → 等待在途请求 → 关闭 SQLite（让 WAL checkpoint）→ 退出。
 function shutdown(signal: string): void {
   logger.info(`收到 ${signal}，正在优雅关闭...`);
+  backupService.stopAutomaticBackups();
   server.close(() => {
     try {
       db.close();
