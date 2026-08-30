@@ -45,9 +45,10 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 3000
 
-# 健康检查：进程活着但无响应时由 Docker 判断不健康（配合 restart: unless-stopped 自动恢复）。
+# 健康检查：进程活着但无响应时由 Docker 判定不健康。端口跟随 PORT env（默认 3000）。
+# 注意：restart 策略只响应进程退出，不会因 unhealthy 自动重启容器；如需自愈请引入 autoheal 或外部看门狗。
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 # entrypoint 以 root 启动，chown 数据目录后 gosu 降权到 node 用户运行应用。
 ENTRYPOINT ["docker-entrypoint.sh"]
