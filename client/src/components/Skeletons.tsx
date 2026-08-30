@@ -21,24 +21,14 @@ export function DashboardSkeleton() {
         ))}
       </Grid>
 
-      <Grid container spacing={4}>
-        <Grid size={{ xs: 12, md: 4 }}>
-          <Card>
-            <CardContent>
-              <Skeleton variant="text" width={120} height={16} sx={{ mb: 2 }} />
-              <Skeleton variant="rectangular" height={8} sx={{ mb: 2, borderRadius: 4 }} />
-              <Skeleton variant="rectangular" height={36} sx={{ mb: 1, borderRadius: 1 }} />
-              <Skeleton variant="rectangular" height={36} sx={{ borderRadius: 1 }} />
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid size={{ xs: 12, md: 8 }}>
+      <Grid container spacing={3}>
+        <Grid size={{ xs: 12, md: 7 }}>
           <Card>
             <CardContent>
               <Skeleton variant="text" width={150} height={16} sx={{ mb: 2 }} />
               {[1, 2, 3, 4, 5].map((i) => (
                 <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-                  <Skeleton variant="rectangular" width={44} height={44} sx={{ borderRadius: 1 }} />
+                  <Skeleton variant="rectangular" width={36} height={36} sx={{ borderRadius: 1 }} />
                   <Box sx={{ flex: 1 }}>
                     <Skeleton variant="text" width="60%" height={20} />
                     <Skeleton variant="text" width="40%" height={16} />
@@ -46,6 +36,22 @@ export function DashboardSkeleton() {
                   <Skeleton variant="text" width={80} height={20} />
                 </Box>
               ))}
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid size={{ xs: 12, md: 5 }}>
+          <Card>
+            <CardContent>
+              <Skeleton variant="text" width={120} height={16} sx={{ mb: 2 }} />
+              <Skeleton variant="text" width={90} height={18} sx={{ mb: 1 }} />
+              <Skeleton variant="rectangular" height={8} sx={{ mb: 2.5 }} />
+              <Skeleton variant="text" width={90} height={18} sx={{ mb: 1 }} />
+              <Skeleton variant="rectangular" height={6} sx={{ mb: 2.5 }} />
+              <Box sx={{ display: 'flex', gap: 3 }}>
+                <Skeleton variant="rectangular" width={64} height={40} />
+                <Skeleton variant="rectangular" width={64} height={40} />
+                <Skeleton variant="rectangular" width={120} height={40} />
+              </Box>
             </CardContent>
           </Card>
         </Grid>
@@ -65,37 +71,30 @@ export function TransactionListSkeleton() {
         <Skeleton variant="rectangular" width={120} height={36} sx={{ borderRadius: 1 }} />
       </Box>
 
-      <Grid container spacing={3}>
-        <Grid size={{ xs: 12, md: 3 }}>
-          <Card>
-            <CardContent>
-              <Skeleton variant="text" width={60} height={16} sx={{ mb: 2 }} />
-              <Skeleton variant="rectangular" height={40} sx={{ mb: 2, borderRadius: 1 }} />
-              {[1, 2, 3, 4, 5].map((i) => (
-                <Skeleton key={i} variant="rectangular" height={40} sx={{ mb: 1.5, borderRadius: 1 }} />
-              ))}
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid size={{ xs: 12, md: 9 }}>
-          <Card>
-            <CardContent>
-              {[1, 2, 3, 4, 5, 6, 7].map((i) => (
-                <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}>
-                  <Skeleton variant="text" width={80} height={20} />
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Skeleton variant="rectangular" width={32} height={32} sx={{ borderRadius: 1 }} />
-                    <Skeleton variant="text" width={60} height={20} />
-                  </Box>
-                  <Skeleton variant="text" width={120} height={20} sx={{ flex: 1 }} />
-                  <Skeleton variant="text" width={80} height={20} />
-                  <Skeleton variant="text" width={60} height={20} />
-                </Box>
-              ))}
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
+      <Card sx={{ mb: 2 }}>
+        <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 }, display: 'flex', gap: 1.5 }}>
+          <Skeleton variant="rectangular" width={280} height={40} sx={{ borderRadius: 1 }} />
+          <Skeleton variant="rectangular" width={180} height={32} sx={{ borderRadius: 1, alignSelf: 'center' }} />
+          <Skeleton variant="rectangular" width={100} height={32} sx={{ borderRadius: 1, ml: 'auto', alignSelf: 'center' }} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent>
+          {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+            <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 1.25, borderBottom: '1px solid', borderColor: 'divider' }}>
+              <Skeleton variant="text" width={80} height={20} />
+              <Skeleton variant="rectangular" width={40} height={20} sx={{ borderRadius: 0.5 }} />
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Skeleton variant="rectangular" width={30} height={30} sx={{ borderRadius: 1 }} />
+                <Skeleton variant="text" width={60} height={20} />
+              </Box>
+              <Skeleton variant="text" width={140} height={20} sx={{ flex: 1 }} />
+              <Skeleton variant="text" width={80} height={20} />
+            </Box>
+          ))}
+        </CardContent>
+      </Card>
     </Box>
   );
 }

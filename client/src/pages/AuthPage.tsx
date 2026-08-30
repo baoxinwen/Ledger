@@ -16,6 +16,7 @@ import { Brightness4, Brightness7, LockOutlined, Visibility, VisibilityOff } fro
 import { useLocation, useNavigate } from 'react-router-dom';
 import Logo from '../components/Layout/Logo';
 import { useAuthStore } from '../stores/authStore';
+import { ROUTES } from '../constants/routes';
 
 interface AuthPageProps {
   isDarkMode: boolean;
@@ -68,11 +69,17 @@ export default function AuthPage({ isDarkMode, onThemeToggle }: AuthPageProps) {
         await login(username.trim(), password);
       }
       // 登录/初始化成功后回到用户原本要访问的页面；
-      // 仅允许同源单斜杠相对路径，防止 //evil.com 这类协议相对 URL 造成开放重定向。
-      const target = location.pathname.startsWith('/') && !location.pathname.startsWith('//')
+      // 仅允许同源单斜杠相对路径，防止 //evil.com 这类协议相对 URL 造成开放重定向；
+      // 且目标必须是应用内已注册的业务路由（或其子路径），未知路径一律回首页，
+      // 避免登录后落入无 404 兜底的空白内容区。
+      const candidate = location.pathname.startsWith('/') && !location.pathname.startsWith('//')
         ? `${location.pathname}${location.search}`
         : '/';
-      navigate(target);
+      const knownRoutes = Object.values(ROUTES);
+      const isKnownRoute = knownRoutes.some((route) => (
+        candidate === route || candidate.startsWith(`${route}/`)
+      ));
+      navigate(isKnownRoute ? candidate : '/');
     } catch (error) {
       setFormError(getApiErrorMessage(error));
     } finally {

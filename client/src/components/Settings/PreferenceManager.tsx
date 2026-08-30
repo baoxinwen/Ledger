@@ -105,19 +105,18 @@ export default function PreferenceManager() {
               </Typography>
             </Box>
 
+            {/* 受限下拉而非自由输入：IANA 时区名易拼错，从列表选择可避免无效值 */}
             <Autocomplete
-              freeSolo
               options={timeZoneOptions}
               value={normalizedTimeZone}
               onChange={(_, value) => setTimeZone(value || DEFAULT_TIME_ZONE)}
-              onInputChange={(_, value) => setTimeZone(value)}
               renderInput={(params) => (
                 <TextField
                   {...params}
                   label="时区"
                   placeholder="Asia/Shanghai"
                   error={Boolean(normalizedTimeZone) && !isTimeZoneValid}
-                  helperText={isTimeZoneValid ? 'Docker 首次部署默认使用 TZ，保存后以这里为准' : '请输入有效的 IANA 时区名'}
+                  helperText={isTimeZoneValid ? 'Docker 首次部署默认使用 TZ，保存后以这里为准' : '请选择有效的 IANA 时区'}
                 />
               )}
             />

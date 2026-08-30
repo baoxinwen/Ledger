@@ -1,5 +1,6 @@
 // 交易表单：复用在新增和编辑场景，并把常用字段写入表单记忆 store。
-import { useState, useEffect } from 'react';
+// 高频操作优先级设计：金额大输入框 + 分类图标网格一次点选 + 今天/昨天快捷键 + 保存并再记。
+import { useState, useEffect, useRef } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -10,20 +11,25 @@ import {
   Box,
   ToggleButton,
   ToggleButtonGroup,
-  MenuItem,
   Chip,
   Autocomplete,
+  Typography,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material';
 import type { TransactionWithDetails, Category, Tag } from '../types';
 import { useFormMemoryStore } from '../stores/formMemoryStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useSnackbarStore } from '../stores/snackbarStore';
 import { useZonedToday } from '../hooks/useZonedToday';
+import { CategoryAvatar } from './ui';
+import { FONT_SERIF, NUMERIC_TEXT } from '../theme';
 
 interface TransactionFormProps {
   open: boolean;
   onClose: () => void;
-  onSubmit: (data: any) => Promise<void>;
+  /** 提交成功 resolve(true)，失败 resolve(false)——失败时弹窗保持打开、用户输入不丢失。 */
+  onSubmit: (data: any) => Promise<boolean>;
   transaction?: TransactionWithDetails | null;
   categories: Category[];
   tags: Tag[];
@@ -39,6 +45,8 @@ export default function TransactionForm({
   tags,
   onCreateTag,
 }: TransactionFormProps) {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const { transactionForm, setTransactionForm } = useFormMemoryStore();
   const timeZone = useSettingsStore((state) => state.settings.time_zone);
   const today = useZonedToday(timeZone);
@@ -47,8 +55,16 @@ export default function TransactionForm({
   const [amount, setAmount] = useState('');
   const [categoryId, setCategoryId] = useState<number | ''>(transactionForm.category_id || '');
   const [note, setNote] = useState('');
-  const [date, setDate] = useState(transactionForm.date || today);
+  // 新建记录永远以"今天"为默认日期：表单记忆只保留类型与分类偏好，不再记忆日期，
+  // 避免隔天记账时把昨天日期静默预填进去（记错天）。
+  const [date, setDate] = useState(today);
+  const handleDateChange = (nextDate: string) => {
+    setDate(nextDate);
+    setDateTouched(true);
+  };
   const [selectedTags, setSelectedTags] = useState<Tag[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const amountInputRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (transaction) {
@@ -63,10 +79,21 @@ export default function TransactionForm({
       setAmount('');
       setCategoryId(transactionForm.category_id || '');
       setNote('');
-      setDate(transactionForm.date || today);
+      setDate(today);
+      setDateTouched(false);
       setSelectedTags([]);
     }
-  }, [today, transaction, transactionForm.category_id, transactionForm.date, transactionForm.type]);
+    // 注意：today 不进依赖数组——跨午夜时由下方独立 effect 仅滚动日期，
+    // 否则 useZonedToday 的分钟级 tick 会把用户正在填写的金额/备注整体清空。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transaction, transactionForm.category_id, transactionForm.type]);
+
+  // 跨天（含弹窗打开期间跨零点）时仅把新建模式的日期滚动到新的"今天"，其余字段不动。
+  // 用户手动改过日期（选了昨天/任意日期）则不覆盖，尊重用户输入。
+  const [dateTouched, setDateTouched] = useState(false);
+  useEffect(() => {
+    if (!transaction && !dateTouched) setDate(today);
+  }, [today, transaction, dateTouched]);
 
   const filteredCategories = categories.filter((c) => c.type === type);
 
@@ -77,31 +104,45 @@ export default function TransactionForm({
     if (!stillValid) setCategoryId('');
   };
 
-  const handleSubmit = async () => {
-    if (!amount || !categoryId || !date) return;
+  const buildPayload = () => {
+    if (!amount || !categoryId || !date) return null;
     const parsedAmount = parseFloat(amount);
     if (!Number.isFinite(parsedAmount) || parsedAmount < 0) {
       showSnackbar('请输入有效的非负金额', 'error');
-      return;
+      return null;
     }
+    // 过滤掉已不在最新标签列表里的选中项：标签可能刚被删除，携带死 tag_id 提交会被外键拒绝。
+    const liveTagIds = selectedTags
+      .filter((selectedTag) => tags.some((tag) => tag.id === selectedTag.id))
+      .map((t) => t.id);
+    return { type, amount: parsedAmount, category_id: categoryId, note: note || undefined, date, tag_ids: liveTagIds };
+  };
 
-    await onSubmit({
-      type,
-      amount: parsedAmount,
-      category_id: categoryId,
-      note: note || undefined,
-      date,
-      tag_ids: selectedTags.map((t) => t.id),
-    });
+  const handleSubmit = async (keepOpen = false) => {
+    if (submitting) return; // 提交进行中禁止重复提交（连点会写入两笔相同交易）
+    const payload = buildPayload();
+    if (!payload) return;
 
-    // Save form memory for next use
-    setTransactionForm({
-      type,
-      category_id: categoryId,
-      date,
-    });
+    setSubmitting(true);
+    try {
+      const success = await onSubmit(payload);
+      if (!success) return; // 失败：保留弹窗与全部输入，错误提示由页面层给出
 
-    onClose();
+      // Save form memory for next use（只记忆类型与分类，日期不再记忆）
+      setTransactionForm({ type, category_id: typeof categoryId === 'number' ? categoryId : undefined });
+
+      if (keepOpen && !transaction) {
+        // 连续记账：清金额/备注/标签（避免串笔），分类与日期保留，焦点回金额框
+        setAmount('');
+        setNote('');
+        setSelectedTags([]);
+        amountInputRef.current?.querySelector('input')?.focus();
+      } else {
+        onClose();
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   // 仅在用户提交（选择已有标签或回车创建新标签）时按完整名称解析标签，
@@ -122,88 +163,223 @@ export default function TransactionForm({
     setSelectedTags(nextTags);
   };
 
+  const yesterday = (() => {
+    const d = new Date(`${today}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - 1);
+    return d.toISOString().slice(0, 10);
+  })();
+
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>{transaction ? '编辑记录' : '新增记录'}</DialogTitle>
-      <DialogContent>
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
-          <ToggleButtonGroup
-            value={type}
-            exclusive
-            onChange={(_, value) => value && handleTypeChange(value)}
-            fullWidth
+    <Dialog
+      open={open}
+      onClose={onClose}
+      maxWidth="sm"
+      fullWidth
+      fullScreen={isMobile}
+      PaperProps={{ sx: isMobile ? { borderRadius: 0 } : undefined }}
+    >
+      <DialogTitle>{transaction ? '编辑记录' : '记一笔'}</DialogTitle>
+      <DialogContent
+        sx={{
+          px: { xs: 2, sm: 3 },
+          // 注意：flex 布局放在内层 Box 而不是 DialogContent 上——
+          // DialogContent 高度受限时 flex 子项会被压缩（overflow hidden 的子项 min-height 归零），
+          // 导致类型切换按钮组塌陷成 2px。内层 Box 让内容自然撑高、由 DialogContent 滚动。
+          pb: { xs: 10, sm: 2 },
+        }}
+      >
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+        {/* 类型切换 */}
+        <ToggleButtonGroup
+          value={type}
+          exclusive
+          onChange={(_, value) => value && handleTypeChange(value)}
+          fullWidth
+        >
+          <ToggleButton value="expense" aria-label="支出">
+            支出
+          </ToggleButton>
+          <ToggleButton value="income" aria-label="收入">
+            收入
+          </ToggleButton>
+        </ToggleButtonGroup>
+
+        {/* 金额：大号输入 + ¥ 前缀，移动端唤起数字键盘 */}
+        <TextField
+          label="金额"
+          type="number"
+          inputMode="decimal"
+          inputProps={{ step: '0.01', min: '0' }}
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          required
+          fullWidth
+          autoFocus={!isMobile}
+          InputProps={{
+            startAdornment: (
+              <Box component="span" sx={{ mr: 1, fontFamily: FONT_SERIF, fontSize: '1.4rem', color: 'text.secondary', lineHeight: 1 }}>
+                ¥
+              </Box>
+            ),
+            sx: { '& input': { fontSize: '1.5rem', fontWeight: 700, ...NUMERIC_TEXT, fontFamily: FONT_SERIF } },
+          }}
+          ref={amountInputRef}
+        />
+
+        {/* 分类：图标网格一次点选 */}
+        <Box>
+          <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 1 }}>
+            分类 *
+          </Typography>
+          <Box
+            role="listbox"
+            aria-label="分类选择"
+            sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))', gap: 1 }}
           >
-            <ToggleButton value="expense">支出</ToggleButton>
-            <ToggleButton value="income">收入</ToggleButton>
-          </ToggleButtonGroup>
-
-          <TextField
-            label="金额"
-            type="number"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            required
-            fullWidth
-          />
-
-          <TextField
-            select
-            label="分类"
-            value={categoryId}
-            onChange={(e) => setCategoryId(Number(e.target.value))}
-            required
-            fullWidth
-          >
-            {filteredCategories.map((cat) => (
-              <MenuItem key={cat.id} value={cat.id}>
-                {cat.icon} {cat.name}
-              </MenuItem>
-            ))}
-          </TextField>
-
-          <Autocomplete
-            multiple
-            freeSolo
-            options={tags}
-            value={selectedTags}
-            onChange={(_, value) => {
-              void handleTagChange(value);
-            }}
-            getOptionLabel={(option) => typeof option === 'string' ? option : option.name}
-            renderTags={(value, getTagProps) =>
-              value.map((option, index) => (
-                <Chip label={typeof option === 'string' ? option : option.name} {...getTagProps({ index })} />
-              ))
-            }
-            renderInput={(params) => (
-              <TextField {...params} label="标签" placeholder="选择或创建标签" />
+            {filteredCategories.map((cat) => {
+              const selected = cat.id === categoryId;
+              return (
+                <Box
+                  key={cat.id}
+                  component="button"
+                  type="button"
+                  role="option"
+                  aria-selected={selected}
+                  data-category-id={cat.id}
+                  onClick={() => setCategoryId(cat.id)}
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 0.75,
+                    px: 1,
+                    py: 1.25,
+                    bgcolor: selected ? 'secondary.main' : 'subcard',
+                    color: selected ? '#0a0a0f' : 'text.primary',
+                    border: '1px solid',
+                    borderColor: selected ? 'secondary.dark' : 'divider',
+                    borderRadius: 1,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                    transition: 'all 160ms cubic-bezier(0.23, 1, 0.32, 1)',
+                    '&:hover': { borderColor: 'secondary.main' },
+                    '&:focus-visible': { outline: '2px solid', outlineColor: 'secondary.main', outlineOffset: 1 },
+                  }}
+                >
+                  <Box sx={{ opacity: selected ? 1 : 0.9, filter: selected ? 'grayscale(0.2)' : 'none' }}>
+                    <CategoryAvatar category={cat} size={30} />
+                  </Box>
+                  <Typography
+                    variant="caption"
+                    noWrap
+                    sx={{ maxWidth: '100%', fontWeight: selected ? 700 : 500, color: 'inherit' }}
+                  >
+                    {cat.name}
+                  </Typography>
+                </Box>
+              );
+            })}
+            {filteredCategories.length === 0 && (
+              <Typography variant="body2" sx={{ color: 'text.secondary', gridColumn: '1 / -1' }}>
+                该类型下暂无分类，请先在设置中创建
+              </Typography>
             )}
-          />
+          </Box>
+        </Box>
 
-          <TextField
-            label="备注"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            fullWidth
-            multiline
-            rows={2}
-          />
+        {/* 日期：今天/昨天快捷键 + 日期选择 */}
+        <Box>
+          <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 1 }}>
+            日期 *
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+            <Chip
+              label="今天"
+              size="small"
+              color={date === today ? 'primary' : 'default'}
+              variant={date === today ? 'filled' : 'outlined'}
+              onClick={() => handleDateChange(today)}
+            />
+            <Chip
+              label="昨天"
+              size="small"
+              color={date === yesterday ? 'primary' : 'default'}
+              variant={date === yesterday ? 'filled' : 'outlined'}
+              onClick={() => handleDateChange(yesterday)}
+            />
+            <TextField
+              type="date"
+              size="small"
+              value={date}
+              onChange={(e) => handleDateChange(e.target.value)}
+              required
+              sx={{ flex: { xs: '1 1 140px', sm: '0 1 180px' }, minWidth: 140 }}
+              InputLabelProps={{ shrink: true }}
+            />
+          </Box>
+        </Box>
 
-          <TextField
-            label="日期"
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            required
-            fullWidth
-            InputLabelProps={{ shrink: true }}
-          />
+        <Autocomplete
+          multiple
+          freeSolo
+          options={tags}
+          value={selectedTags}
+          onChange={(_, value) => {
+            void handleTagChange(value);
+          }}
+          getOptionLabel={(option) => typeof option === 'string' ? option : option.name}
+          renderTags={(value, getTagProps) =>
+            value.map((option, index) => (
+              <Chip label={typeof option === 'string' ? option : option.name} {...getTagProps({ index })} />
+            ))
+          }
+          renderInput={(params) => (
+            <TextField {...params} label="标签" placeholder="选择或创建标签" />
+          )}
+        />
+
+        <TextField
+          label="备注"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          fullWidth
+          multiline
+          rows={2}
+        />
         </Box>
       </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>取消</Button>
-        <Button onClick={handleSubmit} variant="contained" disabled={!amount || !categoryId || !date}>
-          {transaction ? '保存' : '添加'}
+
+      <DialogActions
+        sx={{
+          px: { xs: 2, sm: 3 },
+          py: 2,
+          // 移动端全屏时固定底部操作条
+          position: isMobile ? 'fixed' : 'static',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          bgcolor: 'background.paper',
+          borderTop: isMobile ? '1px solid' : 'none',
+          borderColor: 'divider',
+          gap: 1,
+        }}
+      >
+        <Button onClick={onClose} disabled={submitting}>取消</Button>
+        {!transaction && (
+          <Button
+            onClick={() => void handleSubmit(true)}
+            variant="outlined"
+            disabled={!amount || !categoryId || !date || submitting}
+          >
+            保存并再记
+          </Button>
+        )}
+        <Button
+          onClick={() => void handleSubmit(false)}
+          variant="contained"
+          disabled={!amount || !categoryId || !date || submitting}
+        >
+          {submitting ? '保存中…' : transaction ? '保存' : '添加'}
         </Button>
       </DialogActions>
     </Dialog>

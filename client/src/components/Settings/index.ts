@@ -4,3 +4,4 @@ export { default as CategoryFormDialog } from './CategoryFormDialog';
 export { default as TagManager } from './TagManager';
 export { default as ImportExportManager } from './ImportExportManager';
 export { default as PreferenceManager } from './PreferenceManager';
+export { default as BackupRestoreManager } from './BackupRestoreManager';

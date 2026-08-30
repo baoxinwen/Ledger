@@ -11,19 +11,27 @@ import { ConfirmDialog, EmptyState, SectionCard } from '../ui';
 
 interface TagManagerProps {
   tags: Tag[];
-  onCreate: (name: string) => Promise<void>;
-  onDelete: (id: number) => Promise<void>;
+  onCreate: (name: string) => Promise<boolean>;
+  onDelete: (id: number) => Promise<boolean>;
 }
 
 export default function TagManager({ tags, onCreate, onDelete }: TagManagerProps) {
   const [newTagName, setNewTagName] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Tag | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   const handleCreate = async () => {
-    if (!newTagName.trim()) return;
-    await onCreate(newTagName.trim());
-    setNewTagName('');
+    const name = newTagName.trim();
+    if (!name || creating) return;
+    try {
+      setCreating(true);
+      // 失败时保留输入框内容（错误提示由页面层统一弹出），只有成功才清空。
+      const success = await onCreate(name);
+      if (success) setNewTagName('');
+    } finally {
+      setCreating(false);
+    }
   };
 
   const handleConfirmDelete = async () => {
@@ -31,10 +39,9 @@ export default function TagManager({ tags, onCreate, onDelete }: TagManagerProps
 
     try {
       setDeleting(true);
-      await onDelete(deleteTarget.id);
+      const success = await onDelete(deleteTarget.id);
+      if (!success) return; // 失败保留确认框，让用户可以重试或取消
       setDeleteTarget(null);
-    } catch (error) {
-      console.error('Failed to delete tag:', error);
     } finally {
       setDeleting(false);
     }
@@ -66,7 +73,7 @@ export default function TagManager({ tags, onCreate, onDelete }: TagManagerProps
           <Button
             variant="contained"
             onClick={handleCreate}
-            disabled={!newTagName.trim()}
+            disabled={!newTagName.trim() || creating}
             sx={{ height: 40, minWidth: 112, justifySelf: { xs: 'stretch', sm: 'start' } }}
           >
             添加标签
@@ -75,14 +82,20 @@ export default function TagManager({ tags, onCreate, onDelete }: TagManagerProps
 
         {tags.length > 0 ? (
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-            {tags.map((tag) => (
-              <Chip
-                key={tag.id}
-                label={tag.name}
-                sx={{ height: 30 }}
-                onDelete={() => setDeleteTarget(tag)}
-              />
-            ))}
+            {tags.map((tag) => {
+              const usage = tag.usage_count ?? 0;
+              return (
+                <Chip
+                  key={tag.id}
+                  label={usage > 0 ? `${tag.name} × ${usage}` : `${tag.name} · 未使用`}
+                  onDelete={() => setDeleteTarget(tag)}
+                  // 零使用标签弱化显示，提示可清理
+                  sx={usage === 0
+                    ? { height: 30, color: 'text.disabled', bgcolor: 'action.hover' }
+                    : { height: 30 }}
+                />
+              );
+            })}
           </Box>
         ) : (
           <EmptyState title="暂无标签" description="导入来源标签和手动标签会显示在这里" />

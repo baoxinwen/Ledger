@@ -151,3 +151,46 @@ function getLastDayOfMonth(year: number, month: number): number {
 function pad2(value: number): string {
   return String(value).padStart(2, '0');
 }
+
+// ── 展示层增补：相对日期、金额缩写、带符号百分比 ─────────────────────────
+
+/**
+ * 把 YYYY-MM-DD 显示为相对日期：今天 / 昨天 / M月D日 / 跨年时带年份。
+ * todayStr 用于业务时区下的"今天"判定，由调用方传 useZonedToday 的结果。
+ */
+export function formatRelativeDay(dateStr: string, todayStr?: string): string {
+  if (todayStr) {
+    if (dateStr === todayStr) return '今天';
+    const yesterday = new Date(`${todayStr}T00:00:00Z`);
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    if (dateStr === yesterday.toISOString().slice(0, 10)) return '昨天';
+  }
+  const parsed = parsePlainDate(dateStr);
+  if (!parsed) return dateStr;
+  const currentYear = getZonedDateParts(new Date(), DEFAULT_TIME_ZONE).year;
+  if (parsed.year !== currentYear) return `${parsed.year}年${parsed.month}月${parsed.day}日`;
+  return `${parsed.month}月${parsed.day}日`;
+}
+
+/**
+ * 金额缩写： >= 1万 显示 x.x万，否则无小数元；图表坐标轴与紧凑展示统一用它。
+ */
+export function formatWan(amount: number): string {
+  const abs = Math.abs(amount);
+  const sign = amount < 0 ? '-' : '';
+  if (abs >= 10000) {
+    const wan = abs / 10000;
+    const text = wan >= 100 ? Math.round(wan).toString() : (Math.round(wan * 10) / 10).toString();
+    return `${sign}¥${text}万`;
+  }
+  return `${sign}¥${Math.round(abs).toLocaleString('zh-CN')}`;
+}
+
+/**
+ * 环比变化率显示：+21.1% / -1.9%；null（无上期数据）显示占位符。
+ */
+export function formatPercentChange(change: number | null | undefined): string {
+  if (change === null || change === undefined || !Number.isFinite(change)) return '—';
+  const sign = change > 0 ? '+' : '';
+  return `${sign}${change.toFixed(1)}%`;
+}

@@ -1,5 +1,15 @@
-export { default as EmptyState } from './EmptyState';
+export { default as Amount } from './Amount';
+export { default as CategoryAvatar } from './CategoryAvatar';
 export { default as ConfirmDialog } from './ConfirmDialog';
+export { default as DayHeader } from './DayHeader';
+export { default as EmptyState } from './EmptyState';
+export { default as HoverActions } from './HoverActions';
 export { default as MetricCard } from './MetricCard';
 export { default as PageHeader } from './PageHeader';
+export { default as ProportionBar } from './ProportionBar';
+export { budgetHealth } from '../../utils/budgetHealth';
 export { default as SectionCard } from './SectionCard';
+export { default as Sparkline } from './Sparkline';
+export { default as StatusChip } from './StatusChip';
+export { default as TagChip } from './TagChip';
+export { default as TypeBadge } from './TypeBadge';

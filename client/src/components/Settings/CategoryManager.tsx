@@ -15,14 +15,14 @@ import {
   Edit as EditIcon,
 } from '@mui/icons-material';
 import type { Category } from '../../types';
-import { ConfirmDialog } from '../ui';
+import { CategoryAvatar, ConfirmDialog, HoverActions } from '../ui';
 import CategoryFormDialog from './CategoryFormDialog';
 
 interface CategoryManagerProps {
   categories: Category[];
-  onCreate: (data: { name: string; type: 'income' | 'expense'; icon?: string; color?: string }) => Promise<void>;
-  onUpdate: (id: number, data: { name?: string; icon?: string; color?: string }) => Promise<void>;
-  onDelete: (id: number) => Promise<void>;
+  onCreate: (data: { name: string; type: 'income' | 'expense'; icon?: string; color?: string }) => Promise<boolean>;
+  onUpdate: (id: number, data: { name?: string; icon?: string; color?: string }) => Promise<boolean>;
+  onDelete: (id: number) => Promise<boolean>;
 }
 
 export default function CategoryManager({ categories, onCreate, onUpdate, onDelete }: CategoryManagerProps) {
@@ -48,18 +48,17 @@ export default function CategoryManager({ categories, onCreate, onUpdate, onDele
   };
 
   const handleSubmit = async (data: { name: string; type: 'income' | 'expense'; icon?: string; color?: string }) => {
-    try {
-      if (editingCategory) {
-        const { type: _type, ...updateData } = data;
-        await onUpdate(editingCategory.id, updateData);
-      } else {
-        await onCreate(data);
-      }
-      setFormOpen(false);
-      setEditingCategory(null);
-    } catch (err) {
-      console.error('Category operation failed:', err);
-    }
+    const success = editingCategory
+      ? await onUpdate(editingCategory.id, {
+        name: data.name,
+        icon: data.icon,
+        color: data.color,
+      })
+      : await onCreate(data);
+    // 失败时保留弹窗与已填内容（错误提示由页面层统一弹出），只有成功才关闭。
+    if (!success) return;
+    setFormOpen(false);
+    setEditingCategory(null);
   };
 
   const handleDelete = (category: Category) => {
@@ -71,10 +70,9 @@ export default function CategoryManager({ categories, onCreate, onUpdate, onDele
 
     try {
       setDeleting(true);
-      await onDelete(deleteTarget.id);
+      const success = await onDelete(deleteTarget.id);
+      if (!success) return; // 失败保留确认框，让用户可以重试或取消
       setDeleteTarget(null);
-    } catch (err) {
-      console.error('Failed to delete category:', err);
     } finally {
       setDeleting(false);
     }
@@ -110,7 +108,7 @@ export default function CategoryManager({ categories, onCreate, onUpdate, onDele
       <Grid container spacing={2}>
         {cats.map((cat) => (
           <Grid size={{ xs: 12, sm: 6, md: 4 }} key={cat.id}>
-            <Card sx={{ height: 72 }}>
+            <Card className="hover-actions-host" sx={{ height: 64 }}>
               <CardContent sx={{ height: '100%', py: 1.25, '&:last-child': { pb: 1.25 } }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '100%', gap: 1.5 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0, gap: 1.25 }}>
@@ -118,12 +116,12 @@ export default function CategoryManager({ categories, onCreate, onUpdate, onDele
                       data-testid={`category-color-${cat.name}`}
                       sx={{
                         width: 4,
-                        height: 40,
+                        height: 36,
                         bgcolor: cat.color || 'divider',
                         flexShrink: 0,
                       }}
                     />
-                    <Typography variant="h5" sx={{ width: 30, textAlign: 'center', flexShrink: 0 }}>{cat.icon || '•'}</Typography>
+                    <CategoryAvatar category={cat} size={32} />
                     <Box sx={{ minWidth: 0 }}>
                       <Typography noWrap sx={{ fontWeight: 600 }}>{cat.name}</Typography>
                       <Typography variant="caption" sx={{ color: 'text.secondary', letterSpacing: 0, textTransform: 'none' }}>
@@ -131,18 +129,16 @@ export default function CategoryManager({ categories, onCreate, onUpdate, onDele
                       </Typography>
                     </Box>
                   </Box>
-                  <Box sx={{ width: 72, display: 'flex', justifyContent: 'flex-end' }}>
-                    {!cat.is_preset && (
-                      <>
-                        <IconButton size="small" onClick={() => handleEdit(cat)} aria-label={`编辑${cat.name}`}>
-                          <EditIcon />
-                        </IconButton>
-                        <IconButton size="small" onClick={() => handleDelete(cat)} aria-label={`删除${cat.name}`}>
-                          <DeleteIcon />
-                        </IconButton>
-                      </>
-                    )}
-                  </Box>
+                  {!cat.is_preset && (
+                    <HoverActions>
+                      <IconButton size="small" onClick={() => handleEdit(cat)} aria-label={`编辑${cat.name}`}>
+                        <EditIcon />
+                      </IconButton>
+                      <IconButton size="small" onClick={() => handleDelete(cat)} aria-label={`删除${cat.name}`}>
+                        <DeleteIcon />
+                      </IconButton>
+                    </HoverActions>
+                  )}
                 </Box>
               </CardContent>
             </Card>

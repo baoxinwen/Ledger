@@ -1,4 +1,4 @@
-// 交易列表：桌面端使用表格，移动端切换为卡片布局。
+// 交易列表：桌面端紧凑表格（悬浮操作、类型徽章），移动端卡片布局。
 import {
   Table,
   TableBody,
@@ -7,7 +7,6 @@ import {
   TableHead,
   TableRow,
   IconButton,
-  Chip,
   Typography,
   TablePagination,
   Box,
@@ -16,19 +15,23 @@ import {
   useTheme,
   useMediaQuery,
 } from '@mui/material';
-import { Edit as EditIcon, Delete as DeleteIcon } from '@mui/icons-material';
+import { Edit as EditIcon, Delete as DeleteIcon, Receipt as ReceiptIcon } from '@mui/icons-material';
 import type { TransactionWithDetails } from '../types';
-import { formatAmount } from '../utils/format';
+import { formatRelativeDay } from '../utils/format';
+import { Amount, CategoryAvatar, EmptyState, HoverActions, TagChip, TypeBadge } from './ui';
 
 interface TransactionListProps {
   transactions: TransactionWithDetails[];
   total: number;
   page: number;
   rowsPerPage: number;
+  /** 业务时区今天（YYYY-MM-DD），用于日期相对化显示 */
+  today?: string;
   onPageChange: (page: number) => void;
   onRowsPerPageChange: (rowsPerPage: number) => void;
   onEdit: (transaction: TransactionWithDetails) => void;
   onDelete: (transaction: TransactionWithDetails) => void;
+  onView: (transaction: TransactionWithDetails) => void;
 }
 
 export default function TransactionList({
@@ -36,108 +39,105 @@ export default function TransactionList({
   total,
   page,
   rowsPerPage,
+  today,
   onPageChange,
   onRowsPerPageChange,
   onEdit,
   onDelete,
+  onView,
 }: TransactionListProps) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const isDark = theme.palette.mode === 'dark';
-  const fallbackCategoryColor = (type: TransactionWithDetails['type']) =>
-    type === 'expense'
-      ? (isDark ? '#B06D73' : '#8A5A61')
-      : (isDark ? '#7A8450' : '#5F6F52');
-  const formatSignedAmount = (transaction: TransactionWithDetails) =>
-    `${transaction.type === 'expense' ? '-' : '+'}${formatAmount(transaction.amount)}`;
   const getTransactionLabel = (transaction: TransactionWithDetails) =>
     transaction.note || transaction.category.name;
+
+  const rowActions = (transaction: TransactionWithDetails) => (
+    <HoverActions>
+      <IconButton
+        size="small"
+        onClick={(event) => { event.stopPropagation(); onEdit(transaction); }}
+        aria-label={`编辑${getTransactionLabel(transaction)}`}
+      >
+        <EditIcon fontSize="small" />
+      </IconButton>
+      <IconButton
+        size="small"
+        onClick={(event) => { event.stopPropagation(); onDelete(transaction); }}
+        aria-label={`删除${getTransactionLabel(transaction)}`}
+      >
+        <DeleteIcon fontSize="small" />
+      </IconButton>
+    </HoverActions>
+  );
 
   // Mobile card layout
   if (isMobile) {
     return (
       <Box>
         {transactions.map((transaction) => (
-          <Card key={transaction.id} sx={{ mb: 1.5 }}>
+          <Card
+            key={transaction.id}
+            role="button"
+            tabIndex={0}
+            className="hover-actions-host"
+            onClick={() => onView(transaction)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') onView(transaction);
+            }}
+            sx={{ mb: 1.5, cursor: 'pointer' }}
+          >
             <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1.5, mb: 1.5 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0 }}>
-                  <Box
-                    sx={{
-                      width: 40,
-                      height: 40,
-                      bgcolor: transaction.category.color || fallbackCategoryColor(transaction.type),
-                      color: '#fff',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      borderRadius: 1,
-                      fontSize: '1.1rem',
-                    }}
-                  >
-                    {transaction.category.icon}
-                  </Box>
+                  <CategoryAvatar category={transaction.category} size={40} />
                   <Box sx={{ minWidth: 0 }}>
                     <Typography variant="body2" noWrap sx={{ fontWeight: 500 }}>
                       {transaction.category.name}
                     </Typography>
                     <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                      {transaction.date}
+                      {formatRelativeDay(transaction.date, today)}
                     </Typography>
                   </Box>
                 </Box>
-                <Typography
+                <Amount
+                  value={transaction.amount}
+                  tone={transaction.type}
                   variant="body1"
-                  sx={{
-                    fontWeight: 700,
-                    fontFamily: '"DM Sans", sans-serif',
-                    color: transaction.type === 'expense' ? 'error.main' : 'success.main',
-                    whiteSpace: 'nowrap',
-                    flexShrink: 0,
-                    fontVariantNumeric: 'tabular-nums',
-                  }}
-                >
-                  {formatSignedAmount(transaction)}
-                </Typography>
+                  sx={{ fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0 }}
+                />
               </Box>
 
-              {transaction.note && (
-                <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1.5 }}>
-                  {transaction.note}
-                </Typography>
+              {(transaction.note || transaction.tags.length > 0) && (
+                <Box sx={{ mb: 1.5 }}>
+                  {transaction.note && (
+                    <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1 }}>
+                      {transaction.note}
+                    </Typography>
+                  )}
+                  {transaction.tags.length > 0 && (
+                    <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                      {transaction.tags.map((tag) => (
+                        <TagChip key={tag.id} label={tag.name} />
+                      ))}
+                    </Box>
+                  )}
+                </Box>
               )}
 
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Box sx={{ display: 'flex', gap: 0.5 }}>
-                  {transaction.tags.map((tag) => (
-                    <Chip
-                      key={tag.id}
-                      label={tag.name}
-                      size="small"
-                      variant="outlined"
-                      sx={{ height: 20, fontSize: '0.65rem' }}
-                    />
-                  ))}
-                </Box>
-                <Box>
-                  <IconButton size="small" onClick={() => onEdit(transaction)} aria-label={`编辑${getTransactionLabel(transaction)}`}>
-                    <EditIcon fontSize="small" />
-                  </IconButton>
-                  <IconButton size="small" onClick={() => onDelete(transaction)} aria-label={`删除${getTransactionLabel(transaction)}`}>
-                    <DeleteIcon fontSize="small" />
-                  </IconButton>
-                </Box>
+                <TypeBadge type={transaction.type} />
+                {rowActions(transaction)}
               </Box>
             </CardContent>
           </Card>
         ))}
 
         {transactions.length === 0 && (
-          <Box sx={{ textAlign: 'center', py: 6 }}>
-            <Typography variant="body1" sx={{ color: 'text.secondary' }}>
-              暂无记录
-            </Typography>
-          </Box>
+          <EmptyState
+            icon={<ReceiptIcon sx={{ fontSize: 44 }} />}
+            title="暂无记录"
+            description="调整筛选条件或记一笔新账"
+          />
         )}
 
         <TablePagination
@@ -160,22 +160,24 @@ export default function TransactionList({
     );
   }
 
-  // Desktop table layout
+  // Desktop table layout：紧凑行高 + 类型徽章 + 悬浮操作
   return (
     <Card>
       <TableContainer>
         <Table sx={{ tableLayout: 'fixed', width: '100%', minWidth: 760 }}>
           <colgroup>
-            <col style={{ width: 116 }} />
-            <col style={{ width: 160 }} />
+            <col style={{ width: 108 }} />
+            <col style={{ width: 64 }} />
+            <col style={{ width: 168 }} />
             <col />
-            <col style={{ width: 150 }} />
-            <col style={{ width: 136 }} />
-            <col style={{ width: 88 }} />
+            <col style={{ width: 148 }} />
+            <col style={{ width: 128 }} />
+            <col style={{ width: 84 }} />
           </colgroup>
           <TableHead>
             <TableRow>
               <TableCell>日期</TableCell>
+              <TableCell>类型</TableCell>
               <TableCell>分类</TableCell>
               <TableCell>备注</TableCell>
               <TableCell>标签</TableCell>
@@ -187,34 +189,34 @@ export default function TransactionList({
             {transactions.map((transaction) => (
               <TableRow
                 key={transaction.id}
+                tabIndex={0}
+                className="hover-actions-host"
+                onClick={() => onView(transaction)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') onView(transaction);
+                }}
                 sx={{
+                  cursor: 'pointer',
+                  '& td': { py: 1.25 },
                   '&:hover': {
                     bgcolor: 'action.hover',
                   },
                 }}
               >
-                <TableCell sx={{ width: 116 }}>
-                  <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                <TableCell>
+                  <Typography variant="body2" sx={{ fontWeight: 500, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                    {formatRelativeDay(transaction.date, today)}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: 'text.disabled', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
                     {transaction.date}
                   </Typography>
                 </TableCell>
-                <TableCell sx={{ width: 160 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0 }}>
-                    <Box
-                      sx={{
-                        width: 32,
-                        height: 32,
-                        bgcolor: transaction.category.color || fallbackCategoryColor(transaction.type),
-                        color: '#fff',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        borderRadius: 1,
-                        fontSize: '0.9rem',
-                      }}
-                    >
-                      {transaction.category.icon}
-                    </Box>
+                <TableCell>
+                  <TypeBadge type={transaction.type} />
+                </TableCell>
+                <TableCell>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, minWidth: 0 }}>
+                    <CategoryAvatar category={transaction.category} size={30} />
                     <Typography variant="body2" noWrap>
                       {transaction.category.name}
                     </Typography>
@@ -235,49 +237,36 @@ export default function TransactionList({
                     {transaction.note || '-'}
                   </Typography>
                 </TableCell>
-                <TableCell sx={{ width: 150 }}>
+                <TableCell>
                   <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                     {transaction.tags.map((tag) => (
-                      <Chip
-                        key={tag.id}
-                        label={tag.name}
-                        size="small"
-                        variant="outlined"
-                        sx={{ height: 22, fontSize: '0.65rem' }}
-                      />
+                      <TagChip key={tag.id} label={tag.name} />
                     ))}
                   </Box>
                 </TableCell>
-                <TableCell align="right" sx={{ width: 136, whiteSpace: 'nowrap' }}>
-                  <Typography
+                <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                  <Amount
+                    value={transaction.amount}
+                    tone={transaction.type}
                     variant="body2"
-                    sx={{
-                      fontWeight: 700,
-                      fontFamily: '"DM Sans", sans-serif',
-                      color: transaction.type === 'expense' ? 'error.main' : 'success.main',
-                      whiteSpace: 'nowrap',
-                      fontVariantNumeric: 'tabular-nums',
-                    }}
-                  >
-                    {formatSignedAmount(transaction)}
-                  </Typography>
+                    sx={{ fontWeight: 700 }}
+                  />
                 </TableCell>
-                <TableCell align="center" sx={{ width: 88, whiteSpace: 'nowrap' }}>
-                  <IconButton size="small" onClick={() => onEdit(transaction)} aria-label={`编辑${getTransactionLabel(transaction)}`}>
-                    <EditIcon fontSize="small" />
-                  </IconButton>
-                  <IconButton size="small" onClick={() => onDelete(transaction)} aria-label={`删除${getTransactionLabel(transaction)}`}>
-                    <DeleteIcon fontSize="small" />
-                  </IconButton>
+                <TableCell align="center" sx={{ whiteSpace: 'nowrap' }}>
+                  {rowActions(transaction)}
                 </TableCell>
               </TableRow>
             ))}
             {transactions.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} align="center">
-                  <Typography color="text.secondary" sx={{ py: 4 }}>
-                    暂无记录
-                  </Typography>
+                <TableCell colSpan={7} align="center" sx={{ py: 0 }}>
+                  <Box sx={{ py: 4 }}>
+                    <EmptyState
+                      icon={<ReceiptIcon sx={{ fontSize: 44 }} />}
+                      title="暂无记录"
+                      description="调整筛选条件或记一笔新账"
+                    />
+                  </Box>
                 </TableCell>
               </TableRow>
             )}

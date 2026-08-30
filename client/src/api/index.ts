@@ -10,9 +10,16 @@ import type {
   BudgetStatus,
   AppSettings,
   ImportFileSource,
-  ImportResult,
+  ImportPreview,
+  ImportBatch,
+  ImportHistory,
+  ImportPreviewFilter,
+  ImportPreviewRows,
+  ImportPreviewSelectionUpdate,
   AuthUser,
   AuthStatus,
+  BackupRecord,
+  TransactionDetail,
 } from '../types';
 
 const api = axios.create({
@@ -21,6 +28,14 @@ const api = axios.create({
 
 // 供 authStore 注册 401 拦截器（登录过期时自动回到登录页）。
 export { api as http };
+
+// 从 Axios 错误中提取后端返回的中文错误信息，供页面统一提示；
+// 后端不可达或返回结构异常时回退到调用方提供的兜底文案。
+export function getApiErrorMessage(error: unknown, fallback: string): string {
+  const response = (error as { response?: { data?: { error?: unknown } } } | undefined)?.response;
+  const message = response?.data?.error;
+  return typeof message === 'string' && message ? message : fallback;
+}
 
 export const authApi = {
   me: () =>
@@ -35,7 +50,14 @@ export const authApi = {
 
 export const transactionApi = {
   getAll: (filter: TransactionFilter = {}) =>
-    api.get<{ data: TransactionWithDetails[]; total: number }>('/transactions', { params: filter }),
+    api.get<{
+      data: TransactionWithDetails[];
+      total: number;
+      /** 当前筛选全量汇总（非当前页）：汇总条数据源 */
+      summary: { income: number; expense: number; count: number };
+    }>('/transactions', { params: filter }),
+  getById: (id: number) =>
+    api.get<TransactionDetail>(`/transactions/${id}`),
   create: (data: { type: 'income' | 'expense'; amount: number; category_id: number; note?: string; date: string; tag_ids?: number[] }) =>
     api.post<TransactionWithDetails>('/transactions', data),
   update: (id: number, data: Partial<TransactionWithDetails>) =>
@@ -89,12 +111,40 @@ export const settingsApi = {
 export const importExportApi = {
   export: (format: 'json' | 'csv') =>
     api.get('/export', { params: { format }, responseType: 'blob' }),
-  import: (transactions: unknown[]) =>
-    api.post<ImportResult>('/import', { transactions }),
-  importFile: (file: File, source: ImportFileSource) => {
+  previewFile: (file: File, source: ImportFileSource) => {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('source', source);
-    return api.post<ImportResult>('/import/file', formData);
+    return api.post<ImportPreview>('/import/preview', formData);
+  },
+  getPreviewRows: (previewId: string, filter: ImportPreviewFilter & { page?: number; limit?: number } = {}) =>
+    api.get<ImportPreviewRows>(`/import/preview/${encodeURIComponent(previewId)}/rows`, { params: filter }),
+  updatePreviewSelection: (previewId: string, update: ImportPreviewSelectionUpdate) =>
+    api.patch<{ count: number; income: number; expense: number }>(`/import/preview/${encodeURIComponent(previewId)}/selection`, update),
+  deletePreview: (previewId: string) =>
+    api.delete(`/import/preview/${encodeURIComponent(previewId)}`),
+  confirmFile: (file: File, source: ImportFileSource, previewId: string) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('source', source);
+    formData.append('previewId', previewId);
+    return api.post<{ batch: ImportBatch; success: number; hardDuplicates: number; contentDuplicates: number }>('/import/confirm', formData);
+  },
+  getHistory: (page = 1, limit = 20) =>
+    api.get<ImportHistory>('/import/history', { params: { page, limit } }),
+  undoImport: (id: number) =>
+    api.post<{ batch: ImportBatch; undoneCount: number }>(`/import/history/${id}/undo`),
+};
+
+export const backupApi = {
+  list: () => api.get<BackupRecord[]>('/backups'),
+  create: () => api.post<BackupRecord>('/backups'),
+  download: (id: string) => api.get(`/backups/${encodeURIComponent(id)}/download`, { responseType: 'blob' }),
+  delete: (id: string) => api.delete(`/backups/${encodeURIComponent(id)}`),
+  restore: (id: string) => api.post<{ ok: boolean; requiresLogin: boolean }>(`/backups/${encodeURIComponent(id)}/restore`),
+  restoreUpload: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post<{ ok: boolean; requiresLogin: boolean }>('/backups/restore', formData);
   },
 };

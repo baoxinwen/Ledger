@@ -1,10 +1,13 @@
 // 应用路由层：按登录状态渲染登录页或业务模块，并按页面懒加载业务模块减少首屏体积。
 import { lazy, Suspense, useEffect } from 'react';
-import { ThemeProvider, CssBaseline, useMediaQuery, Box, CircularProgress } from '@mui/material';
+import {
+  ThemeProvider, CssBaseline, useMediaQuery, Box, Button, Typography, CircularProgress,
+} from '@mui/material';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { lightTheme, darkTheme } from './theme';
 import MainLayout from './components/Layout/MainLayout';
 import GlobalSnackbar from './components/GlobalSnackbar';
+import GlobalQuickAdd from './components/GlobalQuickAdd';
 import AuthPage from './pages/AuthPage';
 import { useSettingsStore } from './stores/settingsStore';
 import { useAuthStore } from './stores/authStore';
@@ -73,13 +76,29 @@ function App() {
             <Routes>
               <Route path="/" element={<Suspense fallback={<DashboardSkeleton />}><HomePage /></Suspense>} />
               <Route path="/transactions" element={<Suspense fallback={<TransactionListSkeleton />}><TransactionsPage /></Suspense>} />
+              <Route path="/transactions/:id" element={<Suspense fallback={<TransactionListSkeleton />}><TransactionsPage /></Suspense>} />
               <Route path="/statistics" element={<Suspense fallback={<ChartSkeleton />}><StatisticsPage /></Suspense>} />
               <Route path="/budgets" element={<Suspense fallback={<BudgetSkeleton />}><BudgetsPage /></Suspense>} />
               <Route path="/settings" element={<Suspense fallback={<SettingsSkeleton />}><SettingsPage /></Suspense>} />
+              {/* 兜底 404：书签拼错等未知路径给出明确反馈，而不是空白内容区 */}
+              <Route
+                path="*"
+                element={
+                  <Box sx={{ textAlign: 'center', py: 12 }}>
+                    <Typography variant="h4" sx={{ fontWeight: 700, mb: 1 }}>404</Typography>
+                    <Typography variant="body1" sx={{ color: 'text.secondary', mb: 3 }}>
+                      页面不存在或已被移动
+                    </Typography>
+                    <Button variant="contained" onClick={() => window.location.assign('/')}>
+                      返回首页
+                    </Button>
+                  </Box>
+                }
+              />
             </Routes>
+            <GlobalQuickAdd />
           </MainLayout>
-        ) : (
-          <AuthPage isDarkMode={isDarkMode} onThemeToggle={handleThemeToggle} />
+        ) : (          <AuthPage isDarkMode={isDarkMode} onThemeToggle={handleThemeToggle} />
         )}
       </BrowserRouter>
     </ThemeProvider>

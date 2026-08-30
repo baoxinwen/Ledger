@@ -9,10 +9,11 @@ interface SectionCardProps {
   children: ReactNode;
   contentSx?: SxProps<Theme>;
   cardSx?: SxProps<Theme>;
+  headerSx?: SxProps<Theme>;
   testId?: string;
 }
 
-export default function SectionCard({ title, subtitle, action, children, contentSx, cardSx, testId }: SectionCardProps) {
+export default function SectionCard({ title, subtitle, action, children, contentSx, cardSx, headerSx, testId }: SectionCardProps) {
   const hasHeader = title || subtitle || action;
 
   return (
@@ -26,6 +27,7 @@ export default function SectionCard({ title, subtitle, action, children, content
               alignItems: 'flex-start',
               gap: 2,
               mb: 2.5,
+              ...headerSx,
             }}
           >
             <Box sx={{ minWidth: 0 }}>

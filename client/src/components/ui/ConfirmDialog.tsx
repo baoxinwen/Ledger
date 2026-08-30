@@ -5,10 +5,12 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  TextField,
   Typography,
   useTheme,
 } from '@mui/material';
 import { WarningAmber as WarningIcon } from '@mui/icons-material';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 
 interface ConfirmDialogProps {
@@ -18,6 +20,12 @@ interface ConfirmDialogProps {
   confirmText?: string;
   cancelText?: string;
   loading?: boolean;
+  loadingText?: string;
+  /**
+   * 强确认关键字：提供后必须精确输入该关键字才能点击确认，
+   * 用于恢复备份等不可逆操作，防止误触或弹窗弹出瞬间的回车误确认。
+   */
+  confirmKeyword?: string;
   onCancel: () => void;
   onConfirm: () => void;
 }
@@ -29,11 +37,21 @@ export default function ConfirmDialog({
   confirmText = '删除',
   cancelText = '取消',
   loading = false,
+  loadingText = '处理中...',
+  confirmKeyword,
   onCancel,
   onConfirm,
 }: ConfirmDialogProps) {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
+  const [keywordInput, setKeywordInput] = useState('');
+
+  // 弹窗每次打开时清空输入，避免上一次的输入残留直接解锁确认按钮。
+  useEffect(() => {
+    if (open) setKeywordInput('');
+  }, [open]);
+
+  const keywordSatisfied = !confirmKeyword || keywordInput === confirmKeyword;
 
   return (
     <Dialog
@@ -71,11 +89,25 @@ export default function ConfirmDialog({
         </Box>
       </DialogTitle>
 
-      {description && (
+      {(description || confirmKeyword) && (
         <DialogContent sx={{ pt: 0 }}>
-          <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.8 }}>
-            {description}
-          </Typography>
+          {description && (
+            <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.8 }}>
+              {description}
+            </Typography>
+          )}
+          {confirmKeyword && (
+            <TextField
+              autoFocus
+              fullWidth
+              size="small"
+              margin="normal"
+              label={`输入 ${confirmKeyword} 以确认`}
+              value={keywordInput}
+              onChange={(event) => setKeywordInput(event.target.value)}
+              error={keywordInput.length > 0 && keywordInput !== confirmKeyword}
+            />
+          )}
         </DialogContent>
       )}
 
@@ -86,7 +118,7 @@ export default function ConfirmDialog({
         <Button
           variant="contained"
           onClick={onConfirm}
-          disabled={loading}
+          disabled={loading || !keywordSatisfied}
           sx={{
             bgcolor: 'error.main',
             color: '#fff',
@@ -95,7 +127,7 @@ export default function ConfirmDialog({
             },
           }}
         >
-          {loading ? '删除中...' : confirmText}
+          {loading ? loadingText : confirmText}
         </Button>
       </DialogActions>
     </Dialog>

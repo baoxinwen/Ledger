@@ -50,7 +50,7 @@ export default function CategoryFormDialog({ open, category, defaultType, catego
         color: suggestCategoryFormColor(type, '', categories),
       });
     }
-  }, [category?.id, categories, defaultType, open]);
+  }, [category, categories, defaultType, open]);
 
   const handleSubmit = async () => {
     setSubmitting(true);
