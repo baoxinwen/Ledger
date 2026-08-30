@@ -13,6 +13,8 @@ export interface Transaction {
   source_time: string | null;
   payment_method: string | null;
   source_status: string | null;
+  import_batch_id: number | null;
+  import_fingerprint: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -25,11 +27,15 @@ export interface Category {
   color: string | null;
   is_preset: number;
   sort_order: number;
+  created_by_import_batch_id?: number | null;
 }
 
 export interface Tag {
   id: number;
   name: string;
+  created_by_import_batch_id?: number | null;
+  /** 引用该标签的交易数（列表接口返回，供设置页展示使用次数） */
+  usage_count?: number;
 }
 
 export interface Budget {
@@ -48,6 +54,20 @@ export interface AppSettings {
 export interface TransactionWithDetails extends Transaction {
   category: Category;
   tags: Tag[];
+}
+
+export interface ImportBatchSummary {
+  id: number;
+  filename: string;
+  source: string;
+  status: 'completed' | 'failed' | 'undone';
+  createdAt: string;
+  completedAt: string | null;
+  undoneAt: string | null;
+}
+
+export interface TransactionDetail extends TransactionWithDetails {
+  importBatch: ImportBatchSummary | null;
 }
 
 export interface TransactionFilter {
@@ -73,6 +93,8 @@ export interface ImportMetadata {
   source_time?: string;
   payment_method?: string;
   source_status?: string;
+  import_batch_id?: number;
+  import_fingerprint?: string;
 }
 
 export interface ImportDiagnostic {

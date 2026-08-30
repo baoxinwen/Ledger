@@ -33,14 +33,19 @@ export class CategoryService {
     return db.prepare('SELECT * FROM categories WHERE name = ? AND type = ?').get(name, type) as Category | undefined;
   }
 
-  create(data: { name: string; type: 'income' | 'expense'; icon?: string; color?: string }): Category {
+  create(data: { name: string; type: 'income' | 'expense'; icon?: string; color?: string; created_by_import_batch_id?: number }): Category {
+    // 名称+类型查重：categories 表没有唯一约束，不拦截的话 API 可以创建完全重复的分类，
+    // 统计按 c.id 分组会把同一分类拆成多行。导入路径已先经 getByNameAndType 复用，不受影响。
+    if (this.getByNameAndType(data.name.trim(), data.type)) {
+      throw new HttpError(400, '该收支类型下已存在同名分类');
+    }
     const maxOrder = db.prepare('SELECT MAX(sort_order) as max FROM categories WHERE type = ?').get(data.type) as { max: number | null };
     const sortOrder = (maxOrder.max || 0) + 1;
     const color = normalizeHexColor(data.color) || this.suggestColor(data.type, data.name);
 
     const result = db.prepare(
-      'INSERT INTO categories (name, type, icon, color, is_preset, sort_order) VALUES (?, ?, ?, ?, 0, ?)'
-    ).run(data.name, data.type, data.icon || null, color, sortOrder);
+      'INSERT INTO categories (name, type, icon, color, is_preset, sort_order, created_by_import_batch_id) VALUES (?, ?, ?, ?, 0, ?, ?)'
+    ).run(data.name, data.type, data.icon || null, color, sortOrder, data.created_by_import_batch_id || null);
 
     return this.getById(result.lastInsertRowid as number)!;
   }
@@ -55,7 +60,15 @@ export class CategoryService {
     if (!category || category.is_preset) return null;
 
     if (data.name) {
-      db.prepare('UPDATE categories SET name = ? WHERE id = ?').run(data.name, id);
+      const trimmedName = data.name.trim();
+      if (!trimmedName) {
+        throw new HttpError(400, '分类名称不能为空');
+      }
+      const duplicate = this.getByNameAndType(trimmedName, category.type);
+      if (duplicate && duplicate.id !== id) {
+        throw new HttpError(400, '该收支类型下已存在同名分类');
+      }
+      db.prepare('UPDATE categories SET name = ? WHERE id = ?').run(trimmedName, id);
     }
     if (data.icon !== undefined) {
       db.prepare('UPDATE categories SET icon = ? WHERE id = ?').run(data.icon, id);

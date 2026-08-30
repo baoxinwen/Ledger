@@ -13,21 +13,41 @@ import transactionRoutes from './routes/transactions';
 import budgetRoutes from './routes/budgets';
 import importExportRoutes from './routes/import-export';
 import settingsRoutes from './routes/settings';
+import backupRoutes from './routes/backups';
+import { rejectDuringMaintenance } from './maintenance';
 
 const app = express();
 
 // 默认不信任 X-Forwarded-For（登录限流按直连对端 IP 计数，防止伪造绕过）。
-// 部署在反向代理后时设置 TRUST_PROXY=true，让 req.ip 解析真实客户端地址。
-if (process.env.TRUST_PROXY === 'true') {
-  app.set('trust proxy', true);
+// 部署在反向代理后时通过 TRUST_PROXY 声明可信代理，支持三种取值：
+//   TRUST_PROXY=1          信任倒数第 N 跳（推荐：N=反代层数，客户端伪造的 XFF 会被忽略）
+//   TRUST_PROXY=true       信任全部跳数（仅当端口无法绕过反代直连时才安全，否则限流可被伪造头重置）
+//   TRUST_PROXY=10.0.0.1,loopback   逗号分隔的可信代理 IP/网段/表达式
+const trustProxy = process.env.TRUST_PROXY?.trim();
+if (trustProxy) {
+  if (/^\d+$/.test(trustProxy)) {
+    app.set('trust proxy', Number(trustProxy));
+  } else if (trustProxy === 'true' || trustProxy === 'false') {
+    app.set('trust proxy', trustProxy === 'true');
+  } else {
+    app.set('trust proxy', trustProxy.split(',').map((value) => value.trim()).filter(Boolean));
+  }
 }
 
 // 前端 SPA 与 API 始终同源（生产由本服务托管，开发由 Vite 代理），不存在合法跨域调用方，
 // 因此不再开放 CORS，避免任意来源读取/调用接口。
-// /api/import 接受较大的标准 JSON 导入：全局 json 默认 100kb，完整导出再导入会超限。
-// 该中间件先于全局 json 挂载，body-parser 会跳过已解析（req._body）的请求；multipart 上传不受影响。
-app.use('/api/import', express.json({ limit: '20mb' }));
+// /api/import 需要接受较大的 JSON（导入预览大批量行勾选的 selection 更新会超过全局 100kb 默认值）。
+// 该中间件必须先于全局 json 挂载（body-parser 会跳过已解析 req._body 的请求；multipart 不受影响），
+// 但解析之前先执行鉴权：匿名请求直接 401，不再为未登录流量缓冲并解析最多 20MB 的请求体。
+app.use('/api/import', rejectDuringMaintenance, requireAuth, express.json({ limit: '20mb' }));
 app.use(express.json());
+
+// Express 5 不再把 req.body 默认置为 {}：非 JSON Content-Type（或缺省）的请求体为 undefined，
+// 路由层解构会抛 TypeError 变成 500。统一归一为空对象，让校验层给出 400 的明确业务错误。
+app.use((req: express.Request, _res: express.Response, next: express.NextFunction) => {
+  if (req.body === undefined) req.body = {};
+  next();
+});
 
 // 安全响应头：CSP（限制脚本/样式来源）、点击劫持、MIME 嗅探、引用策略。
 // MUI/emotion 需要内联样式，因此 style-src 放行 'unsafe-inline'；Google Fonts 来自 gstatic。
@@ -57,6 +77,9 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// 恢复期间数据库连接会短暂关闭，在鉴权查询数据库前统一拒绝新 API 请求。
+app.use('/api', rejectDuringMaintenance);
+
 // 鉴权相关接口对外公开（创建账户、登录、登出、查询状态）。
 app.use('/api/auth', authRoutes);
 
@@ -68,6 +91,7 @@ app.use('/api/tags', tagRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/budgets', budgetRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/backups', backupRoutes);
 app.use('/api', importExportRoutes);
 
 if (process.env.NODE_ENV === 'production') {

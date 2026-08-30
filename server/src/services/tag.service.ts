@@ -6,7 +6,14 @@ import { getErrorMessage } from '../utils/errors';
 
 export class TagService {
   getAll(): Tag[] {
-    return db.prepare('SELECT * FROM tags ORDER BY name').all() as Tag[];
+    // LEFT JOIN 统计引用次数：设置页展示使用次数，0 次标签可提示清理。
+    return db.prepare(`
+      SELECT t.id, t.name, t.created_by_import_batch_id, COUNT(tt.transaction_id) AS usage_count
+      FROM tags t
+      LEFT JOIN transaction_tags tt ON tt.tag_id = t.id
+      GROUP BY t.id
+      ORDER BY t.name
+    `).all() as Tag[];
   }
 
   getById(id: number): Tag | undefined {
@@ -17,12 +24,12 @@ export class TagService {
     return db.prepare('SELECT * FROM tags WHERE name = ?').get(name) as Tag | undefined;
   }
 
-  create(name: string): Tag {
+  create(name: string, createdByImportBatchId?: number): Tag {
     const existing = this.getByName(name);
     if (existing) return existing;
 
     try {
-      const result = db.prepare('INSERT INTO tags (name) VALUES (?)').run(name);
+      const result = db.prepare('INSERT INTO tags (name, created_by_import_batch_id) VALUES (?, ?)').run(name, createdByImportBatchId || null);
       return this.getById(result.lastInsertRowid as number)!;
     } catch (error) {
       // 并发创建同名标签时可能触发 UNIQUE 约束，返回既有标签而不是抛 500。

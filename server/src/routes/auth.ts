@@ -4,7 +4,7 @@ import { Router, Request, Response } from 'express';
 import { authService } from '../services/auth.service';
 import { getSessionToken, SESSION_COOKIE_NAME } from '../middleware/auth';
 import { getClientIp, checkLoginAttempt, recordLoginFailure, clearLoginFailures } from '../utils/rateLimit';
-import { getErrorMessage } from '../utils/errors';
+import { HttpError } from '../utils/errors';
 
 const router = Router();
 
@@ -22,7 +22,7 @@ function setSessionCookie(res: Response, token: string): void {
   });
 }
 
-function clearSessionCookie(res: Response): void {
+export function clearSessionCookie(res: Response): void {
   res.clearCookie(SESSION_COOKIE_NAME, {
     httpOnly: true,
     sameSite: 'lax',
@@ -38,14 +38,22 @@ router.get('/me', (req: Request, res: Response) => {
 });
 
 // 首次运行：用日志中的初始化 Token 创建唯一账户，成功后自动登录。
+// 与登录接口同样做失败限流（独立 setup: 前缀键）：初始化 Token 虽为 192 位随机值无法在线穷举，
+// 但限流可以抑制滥用尝试，并在日志泄漏场景下收窄抢注窗口。
 router.post('/setup', (req: Request, res: Response) => {
+  const clientKey = `setup:${getClientIp(req)}`;
+  checkLoginAttempt(clientKey);
   try {
     const { token, username, password } = req.body;
     const result = authService.setup(token, username, password);
+    clearLoginFailures(clientKey);
     setSessionCookie(res, result.sessionToken);
     res.status(201).json({ user: result.user });
   } catch (error) {
-    res.status(400).json({ error: getErrorMessage(error) || '创建账户失败' });
+    recordLoginFailure(clientKey);
+    // 统一交给全局错误中间件：HttpError 保留状态码与业务文案，
+    // 未知错误按 500 处理且不泄露内部信息（此前会把 TypeError 原文透传给客户端）。
+    throw error;
   }
 });
 
@@ -61,7 +69,8 @@ router.post('/login', (req: Request, res: Response) => {
     res.json({ user: result.user });
   } catch (error) {
     recordLoginFailure(clientKey);
-    res.status(401).json({ error: getErrorMessage(error) || '登录失败' });
+    // 限流的 HttpError(429) 也走全局中间件，不再被这里的 catch 降级成 401。
+    throw error;
   }
 });
 

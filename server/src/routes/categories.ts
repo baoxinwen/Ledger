@@ -38,7 +38,7 @@ router.post('/', (req: Request, res: Response) => {
 
 router.put('/:id', (req: Request, res: Response) => {
   const id = requirePositiveId(req.params.id);
-  const name = optionalString(req.body.name, '分类名称');
+  const name = optionalString(req.body.name, '分类名称', 64);
   const icon = optionalString(req.body.icon, '图标');
   const color = optionalString(req.body.color, '颜色');
 

@@ -5,6 +5,17 @@ import db from '../database';
 import { hashPassword, verifyPassword, sha256, timingSafeEqualHex } from '../utils/password';
 import { logSetupToken } from '../utils/logger';
 
+// 登录时序防护用的占位哈希：对不存在的用户也执行一次真实校验耗时（惰性生成一次）。
+let dummyPasswordHash: string | null = null;
+
+function getDummyPasswordHash(): string {
+  if (!dummyPasswordHash) {
+    dummyPasswordHash = hashPassword(crypto.randomBytes(32).toString('hex'));
+  }
+  return dummyPasswordHash;
+}
+import { HttpError } from '../utils/errors';
+
 const SETUP_TOKEN_KEY = 'setup_token_hash';
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 天
 
@@ -45,14 +56,14 @@ export class AuthService {
 
   setup(token: string, username: string, password: string): { user: AuthUser; sessionToken: string } {
     if (this.hasUser()) {
-      throw new Error('应用已初始化，不能重复创建账户');
+      throw new HttpError(409, '应用已初始化，不能重复创建账户');
     }
     if (typeof token !== 'string' || !token) {
-      throw new Error('初始化 Token 无效或已过期');
+      throw new HttpError(400, '初始化 Token 无效或已过期');
     }
     const storedHash = getSetting(SETUP_TOKEN_KEY);
     if (!storedHash || !timingSafeEqualHex(storedHash, sha256(token))) {
-      throw new Error('初始化 Token 无效或已过期');
+      throw new HttpError(400, '初始化 Token 无效或已过期');
     }
 
     const normalizedUsername = validateUsername(username);
@@ -72,16 +83,22 @@ export class AuthService {
 
   login(username: string, password: string): { user: AuthUser; sessionToken: string } {
     if (typeof username !== 'string' || typeof password !== 'string') {
-      throw new Error('用户名或密码错误');
+      throw new HttpError(401, '用户名或密码错误');
     }
     this.purgeExpiredSessions();
     const row = db
       .prepare('SELECT id, username, password_hash FROM users WHERE username = ?')
       .get(username) as { id: number; username: string; password_hash: string } | undefined;
 
-    if (!row || !verifyPassword(password, row.password_hash)) {
+    if (!row) {
+      // 用户名不存在时也对一个随机占位哈希跑一次 scrypt 校验，让"用户不存在"与
+      // "密码错误"的响应耗时一致，消除按时序探测唯一用户名是否存在的侧信道。
+      verifyPassword(password, getDummyPasswordHash());
+      throw new HttpError(401, '用户名或密码错误');
+    }
+    if (!verifyPassword(password, row.password_hash)) {
       // 统一报错文案，不向调用方泄露是用户名不存在还是密码错误。
-      throw new Error('用户名或密码错误');
+      throw new HttpError(401, '用户名或密码错误');
     }
 
     return { user: { id: row.id, username: row.username }, sessionToken: this.createSession(row.id) };
@@ -133,18 +150,18 @@ export class AuthService {
 
 function validateUsername(username: unknown): string {
   if (typeof username !== 'string') {
-    throw new Error('用户名无效');
+    throw new HttpError(400, '用户名无效');
   }
   const normalized = username.trim();
   if (normalized.length < 1 || normalized.length > 32) {
-    throw new Error('用户名长度需要在 1 到 32 个字符之间');
+    throw new HttpError(400, '用户名长度需要在 1 到 32 个字符之间');
   }
   return normalized;
 }
 
 function validatePassword(password: unknown): void {
   if (typeof password !== 'string' || password.length < 8 || password.length > 128) {
-    throw new Error('密码长度需要在 8 到 128 个字符之间');
+    throw new HttpError(400, '密码长度需要在 8 到 128 个字符之间');
   }
 }
 

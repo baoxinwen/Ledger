@@ -43,6 +43,10 @@ export function requireNonNegativeAmount(value: unknown, name = '金额'): numbe
   if (parsed > MAX_AMOUNT) {
     throw new HttpError(400, `${name}过大，超出允许范围`);
   }
+  const normalized = String(value).trim();
+  if (!/^\d+(?:\.\d{1,2})?$/.test(normalized)) {
+    throw new HttpError(400, `${name}最多保留两位小数`);
+  }
   return parsed;
 }
 
@@ -120,6 +124,9 @@ export function optionalBudgetPeriod(value: unknown): 'monthly' | 'yearly' | und
 }
 
 // 标签 id 列表：可选，但一旦提供必须全是正整数。
+// 重复 id 静默去重（transaction_tags 复合主键会让重复触发 UNIQUE 500）；数量设上限防滥用。
+export const MAX_TAG_IDS = 50;
+
 export function optionalTagIds(value: unknown): number[] | undefined {
   if (value === undefined || value === null) return undefined;
   if (
@@ -128,5 +135,9 @@ export function optionalTagIds(value: unknown): number[] | undefined {
   ) {
     throw new HttpError(400, '标签列表无效');
   }
-  return value;
+  const uniqueIds = [...new Set(value)];
+  if (uniqueIds.length > MAX_TAG_IDS) {
+    throw new HttpError(400, `标签数量不能超过 ${MAX_TAG_IDS} 个`);
+  }
+  return uniqueIds;
 }

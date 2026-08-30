@@ -41,7 +41,9 @@ export function recordLoginFailure(key: string): void {
   // 容量满且是全新 key：先清理已过期的记录；仍满则忽略新 key，避免 Map 无界增长。
   if (failures.size >= MAX_TRACKED_KEYS && !failures.has(key)) {
     for (const [trackedKey, record] of failures) {
-      if (now - record.firstFailureAt > WINDOW_MS) {
+      // 只清理彻底过期的记录：冷却期（blockedUntil，最长 firstFailureAt+15min）比滑动窗口
+      // （10min）长，只按 firstFailureAt 判断会把"正在冷却中"的记录删掉导致提前解锁。
+      if (now - record.firstFailureAt > WINDOW_MS && record.blockedUntil < now) {
         failures.delete(trackedKey);
       }
     }

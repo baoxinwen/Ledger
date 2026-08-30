@@ -54,7 +54,7 @@ router.get('/stats', (req: Request, res: Response) => {
 
 router.get('/:id', (req: Request, res: Response) => {
   const id = requirePositiveId(req.params.id);
-  const transaction = transactionService.getById(id);
+  const transaction = transactionService.getDetailById(id);
   if (!transaction) {
     return res.status(404).json({ error: 'Transaction not found' });
   }
