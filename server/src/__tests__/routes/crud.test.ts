@@ -64,7 +64,10 @@ describe('CRUD API routes', () => {
 
     const dup = await agent.post('/api/tags').send({ name: '午餐' });
     expect(dup.body.id).toBe(created.body.id);
-    expect((await agent.get('/api/tags')).body).toHaveLength(1);
+    const tagList = (await agent.get('/api/tags')).body;
+    expect(tagList).toHaveLength(1);
+    // 路由层 HTTP 契约断言：usage_count 必须出现在列表响应里（0 次也要有）
+    expect(tagList[0].usage_count).toBe(0);
 
     expect((await agent.delete(`/api/tags/${created.body.id}`)).status).toBe(204);
     expect((await agent.post('/api/tags').send({ name: ' ' })).status).toBe(400);
@@ -102,18 +105,25 @@ describe('CRUD API routes', () => {
   it('transactions: 创建并分页/筛选查询', async () => {
     const agent = await setupAgent();
     const cat = await agent.post('/api/categories').send({ name: '餐饮', type: 'expense' });
+    const incomeCat = await agent.post('/api/categories').send({ name: '工资', type: 'income' });
     await agent.post('/api/transactions').send({ type: 'expense', amount: 10, category_id: cat.body.id, date: '2026-08-01' });
     await agent.post('/api/transactions').send({ type: 'expense', amount: 20, category_id: cat.body.id, date: '2026-08-02' });
-    await agent.post('/api/transactions').send({ type: 'income', amount: 500, category_id: cat.body.id, date: '2026-08-03' });
+    await agent.post('/api/transactions').send({ type: 'income', amount: 500, category_id: incomeCat.body.id, date: '2026-08-03' });
+    // 分类类型与交易类型不一致时返回 400（审查修复：此前 API 层不校验，可静默污染报表）
+    const mismatched = await agent.post('/api/transactions').send({ type: 'income', amount: 1, category_id: cat.body.id, date: '2026-08-04' });
+    expect(mismatched.status).toBe(400);
 
     const page = await agent.get('/api/transactions?limit=1&page=1');
     expect(page.body.total).toBe(3);
     expect(page.body.data).toHaveLength(1);
+    // summary 是全筛选聚合（与分页无关）：路由层 HTTP 契约断言
+    expect(page.body.summary).toEqual({ income: 500, expense: 30, count: 3 });
 
     const expenseOnly = await agent.get('/api/transactions?type=expense');
     expect(expenseOnly.body.total).toBe(2);
 
     const badFilter = await agent.get('/api/transactions?type=other');
     expect(badFilter.status).toBe(400);
+    expect((await agent.get('/api/transactions/99999')).status).toBe(404);
   });
 });

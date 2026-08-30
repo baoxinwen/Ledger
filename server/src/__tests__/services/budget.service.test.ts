@@ -34,6 +34,12 @@ describe('BudgetService', () => {
     expect(budgetService.getById(created.id)).toBeUndefined();
   });
 
+  it('预算金额在数据库中以整数分存储并以元返回', () => {
+    const created = budgetService.create({ amount: 1234.56, period: 'monthly', start_date: '2026-01-01' });
+    expect(created.amount).toBe(1234.56);
+    expect(db.prepare('SELECT amount_cents FROM budgets WHERE id = ?').get(created.id)).toEqual({ amount_cents: 123456 });
+  });
+
   it('月度预算统计指定月份支出与结余', () => {
     budgetService.create({ category_id: expenseId, amount: 1000, period: 'monthly', start_date: '2026-01-01' });
     transactionService.create({ type: 'expense', amount: 400, category_id: expenseId, date: '2026-01-10' });

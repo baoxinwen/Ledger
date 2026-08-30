@@ -23,11 +23,11 @@ describe('BudgetService period attribution', () => {
 
   it('年度预算只归属 start_date 所在年，查询其他年份时支出为 0', () => {
     budgetService.create({ category_id: expenseId, amount: 12000, period: 'yearly', start_date: '2025-03-01' });
-    db.prepare('INSERT INTO transactions (type, amount, category_id, date) VALUES (?, ?, ?, ?)').run(
-      'expense', 1000, expenseId, '2025-06-01'
+    db.prepare('INSERT INTO transactions (type, amount_cents, category_id, date) VALUES (?, ?, ?, ?)').run(
+      'expense', 100000, expenseId, '2025-06-01'
     );
-    db.prepare('INSERT INTO transactions (type, amount, category_id, date) VALUES (?, ?, ?, ?)').run(
-      'expense', 2000, expenseId, '2026-01-15'
+    db.prepare('INSERT INTO transactions (type, amount_cents, category_id, date) VALUES (?, ?, ?, ?)').run(
+      'expense', 200000, expenseId, '2026-01-15'
     );
 
     const status2025 = budgetService.getBudgetStatus('2025-07');

@@ -26,8 +26,8 @@ describe('CategoryService.delete', () => {
 
   it('删除有交易记录的分类时给出明确错误', () => {
     const category = categoryService.create({ name: '交通', type: 'expense' });
-    db.prepare('INSERT INTO transactions (type, amount, category_id, date) VALUES (?, ?, ?, ?)').run(
-      'expense', 10, category.id, '2026-08-01'
+    db.prepare('INSERT INTO transactions (type, amount_cents, category_id, date) VALUES (?, ?, ?, ?)').run(
+      'expense', 1000, category.id, '2026-08-01'
     );
 
     expect(() => categoryService.delete(category.id)).toThrow('已有交易记录');

@@ -37,6 +37,19 @@ describe('CategoryService', () => {
     expect(categoryService.getByNameAndType('宠物', 'income')).toBeUndefined();
   });
 
+  it('create 拒绝同类型下的重复名称，不同类型允许同名', () => {
+    categoryService.create({ name: '宠物', type: 'expense' });
+    expect(() => categoryService.create({ name: '宠物', type: 'expense' })).toThrow('同名分类');
+    expect(() => categoryService.create({ name: '宠物', type: 'income' })).not.toThrow();
+  });
+
+  it('update 重命名撞名被拒绝，保留自身原名允许', () => {
+    const first = categoryService.create({ name: '甲', type: 'expense' });
+    const second = categoryService.create({ name: '乙', type: 'expense' });
+    expect(() => categoryService.update(second.id, { name: '甲' })).toThrow('同名分类');
+    expect(categoryService.update(first.id, { name: '甲' })?.name).toBe('甲');
+  });
+
   it('update 只允许修改自定义分类', () => {
     const custom = categoryService.create({ name: '宠物', type: 'expense' });
     const updated = categoryService.update(custom.id, { name: '宠物用品' });
@@ -56,8 +69,8 @@ describe('CategoryService', () => {
     expect(categoryService.delete(preset.lastInsertRowid as number)).toBe(false);
 
     const custom = categoryService.create({ name: '宠物', type: 'expense' });
-    db.prepare('INSERT INTO transactions (type, amount, category_id, date) VALUES (?, ?, ?, ?)').run(
-      'expense', 10, custom.id, '2026-01-01'
+    db.prepare('INSERT INTO transactions (type, amount_cents, category_id, date) VALUES (?, ?, ?, ?)').run(
+      'expense', 1000, custom.id, '2026-01-01'
     );
     expect(() => categoryService.delete(custom.id)).toThrow('已有交易记录');
 

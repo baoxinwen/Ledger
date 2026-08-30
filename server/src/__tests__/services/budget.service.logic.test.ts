@@ -23,15 +23,15 @@ describe('BudgetService period-aware status', () => {
   });
 
   it('uses the selected month for monthly budgets and the selected year for yearly budgets', () => {
-    db.prepare('INSERT INTO budgets (category_id, amount, period, start_date) VALUES (?, ?, ?, ?)')
-      .run(categoryId, 1000, 'monthly', '2024-01-01');
-    db.prepare('INSERT INTO budgets (category_id, amount, period, start_date) VALUES (?, ?, ?, ?)')
-      .run(categoryId, 12000, 'yearly', '2024-01-01');
+    db.prepare('INSERT INTO budgets (category_id, amount_cents, period, start_date) VALUES (?, ?, ?, ?)')
+      .run(categoryId, 100000, 'monthly', '2024-01-01');
+    db.prepare('INSERT INTO budgets (category_id, amount_cents, period, start_date) VALUES (?, ?, ?, ?)')
+      .run(categoryId, 1200000, 'yearly', '2024-01-01');
 
-    db.prepare('INSERT INTO transactions (type, amount, category_id, note, date) VALUES (?, ?, ?, ?, ?)')
-      .run('expense', 100, categoryId, '一月', '2024-01-15');
-    db.prepare('INSERT INTO transactions (type, amount, category_id, note, date) VALUES (?, ?, ?, ?, ?)')
-      .run('expense', 200, categoryId, '二月', '2024-02-15');
+    db.prepare('INSERT INTO transactions (type, amount_cents, category_id, note, date) VALUES (?, ?, ?, ?, ?)')
+      .run('expense', 10000, categoryId, '一月', '2024-01-15');
+    db.prepare('INSERT INTO transactions (type, amount_cents, category_id, note, date) VALUES (?, ?, ?, ?, ?)')
+      .run('expense', 20000, categoryId, '二月', '2024-02-15');
 
     const statuses = budgetService.getBudgetStatus('2024-01');
     const monthly = statuses.find((status) => status.budget.period === 'monthly');

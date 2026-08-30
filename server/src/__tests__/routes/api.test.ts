@@ -8,6 +8,7 @@ import request from 'supertest';
 import db from '../setup';
 import app from '../../app';
 import { authService } from '../../services/auth.service';
+import { setMaintenanceMode } from '../../maintenance';
 
 describe('API routes', () => {
   beforeEach(() => {
@@ -23,6 +24,7 @@ describe('API routes', () => {
 
   afterEach(() => {
     delete process.env.SETUP_TOKEN;
+    setMaintenanceMode(false);
   });
 
   it('GET /api/health 返回 ok 且带安全响应头', async () => {
@@ -37,6 +39,14 @@ describe('API routes', () => {
   it('未登录访问数据接口返回 401', async () => {
     const res = await request(app).get('/api/transactions');
     expect(res.status).toBe(401);
+  });
+
+  it('维护期间健康检查可用，其他 API 返回 503', async () => {
+    setMaintenanceMode(true);
+    expect((await request(app).get('/api/health')).status).toBe(200);
+    const blocked = await request(app).get('/api/auth/me');
+    expect(blocked.status).toBe(503);
+    expect(blocked.body.error).toContain('恢复备份');
   });
 
   it('首次访问 /api/auth/me 提示需要初始化', async () => {
@@ -111,6 +121,7 @@ describe('API routes', () => {
       type: 'expense', amount: 100, category_id: 99999, date: '2026-01-01',
     });
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe('引用的分类或标签不存在');
+    // 分类存在性/类型一致性现在由服务层前置校验拦截（比 FK 错误更明确），文案相应更新
+    expect(res.body.error).toBe('分类不存在');
   });
 });

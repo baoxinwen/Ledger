@@ -24,10 +24,10 @@ describe('TransactionService.getAllForExport', () => {
 
   it('返回全部交易，不受分页 limit 影响', () => {
     const insert = db.prepare(
-      'INSERT INTO transactions (type, amount, category_id, note, date) VALUES (?, ?, ?, ?, ?)'
+      'INSERT INTO transactions (type, amount_cents, category_id, note, date) VALUES (?, ?, ?, ?, ?)'
     );
     for (let index = 0; index < 25; index++) {
-      insert.run('expense', 10 + index, expenseId, `记录${index}`, '2026-01-01');
+      insert.run('expense', (10 + index) * 100, expenseId, `记录${index}`, '2026-01-01');
     }
 
     expect(transactionService.getAllForExport()).toHaveLength(25);
@@ -35,10 +35,10 @@ describe('TransactionService.getAllForExport', () => {
 
   it('与 getAll 分页行为区分：默认 getAll 只返回第一页，导出返回全部', () => {
     const insert = db.prepare(
-      'INSERT INTO transactions (type, amount, category_id, note, date) VALUES (?, ?, ?, ?, ?)'
+      'INSERT INTO transactions (type, amount_cents, category_id, note, date) VALUES (?, ?, ?, ?, ?)'
     );
     for (let index = 0; index < 25; index++) {
-      insert.run('expense', 10 + index, expenseId, `记录${index}`, '2026-01-01');
+      insert.run('expense', (10 + index) * 100, expenseId, `记录${index}`, '2026-01-01');
     }
 
     const paged = transactionService.getAll({});
@@ -49,10 +49,10 @@ describe('TransactionService.getAllForExport', () => {
 
   it('批量联查避免 N+1：加载列表的查询次数不随记录数线性增长', () => {
     const insert = db.prepare(
-      'INSERT INTO transactions (type, amount, category_id, note, date) VALUES (?, ?, ?, ?, ?)'
+      'INSERT INTO transactions (type, amount_cents, category_id, note, date) VALUES (?, ?, ?, ?, ?)'
     );
     for (let index = 0; index < 5; index++) {
-      insert.run('expense', 10 + index, expenseId, `记录${index}`, '2026-01-01');
+      insert.run('expense', (10 + index) * 100, expenseId, `记录${index}`, '2026-01-01');
     }
 
     let prepareCount = 0;
@@ -68,18 +68,18 @@ describe('TransactionService.getAllForExport', () => {
       (db as any).prepare = originalPrepare;
     }
 
-    // 批量方案：count(1) + data(1) + 分类批量(1) + 标签批量(1) = 4；
+    // 批量方案：count(1) + summary 汇总(1) + data(1) + 分类批量(1) + 标签批量(1) = 5；
     // 旧的逐条 enrich 方案 = 1 + 1 + 记录数*2 = 12。
-    expect(prepareCount).toBeLessThanOrEqual(4);
+    expect(prepareCount).toBeLessThanOrEqual(5);
   });
 
   it('LIKE 搜索把 % 和 _ 当字面字符而不是通配符', () => {
     const insert = db.prepare(
-      'INSERT INTO transactions (type, amount, category_id, note, date) VALUES (?, ?, ?, ?, ?)'
+      'INSERT INTO transactions (type, amount_cents, category_id, note, date) VALUES (?, ?, ?, ?, ?)'
     );
-    insert.run('expense', 10, expenseId, '折扣50%', '2026-01-01');
-    insert.run('expense', 20, expenseId, '普通备注', '2026-01-02');
-    insert.run('expense', 30, expenseId, '带_下划线', '2026-01-03');
+    insert.run('expense', 1000, expenseId, '折扣50%', '2026-01-01');
+    insert.run('expense', 2000, expenseId, '普通备注', '2026-01-02');
+    insert.run('expense', 3000, expenseId, '带_下划线', '2026-01-03');
 
     // 搜索字面 %：只应命中含 % 的记录；未转义时 %%% 会匹配全部。
     const percentResult = transactionService.getAll({ keyword: '%' });
@@ -94,9 +94,9 @@ describe('TransactionService.getAllForExport', () => {
 
   it('getStats 带 type 过滤时不应抛 ambiguous column 错误', () => {
     const insert = db.prepare(
-      'INSERT INTO transactions (type, amount, category_id, note, date) VALUES (?, ?, ?, ?, ?)'
+      'INSERT INTO transactions (type, amount_cents, category_id, note, date) VALUES (?, ?, ?, ?, ?)'
     );
-    insert.run('income', 5000, expenseId, '工资', '2026-01-01');
+    insert.run('income', 500000, expenseId, '工资', '2026-01-01');
 
     // categoryStats 联表 JOIN categories，categories 也有 type 列；type 过滤必须带表前缀。
     const stats = transactionService.getStats({ type: 'income' });
@@ -122,10 +122,10 @@ describe('TransactionService.getAllForExport', () => {
 
   it('统计金额四舍五入到分，避免浮点误差外泄', () => {
     const insert = db.prepare(
-      'INSERT INTO transactions (type, amount, category_id, note, date) VALUES (?, ?, ?, ?, ?)'
+      'INSERT INTO transactions (type, amount_cents, category_id, note, date) VALUES (?, ?, ?, ?, ?)'
     );
-    insert.run('expense', 0.1, expenseId, 'a', '2026-01-01');
-    insert.run('expense', 0.2, expenseId, 'b', '2026-01-01');
+    insert.run('expense', 10, expenseId, 'a', '2026-01-01');
+    insert.run('expense', 20, expenseId, 'b', '2026-01-01');
 
     const stats = transactionService.getStats({});
     expect(stats.totalExpense).toBe(0.3);

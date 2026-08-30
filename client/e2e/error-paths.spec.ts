@@ -1,4 +1,5 @@
-import { test, expect, Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 const E2E_SETUP_TOKEN = 'e2e-setup-token';
 
@@ -39,7 +40,8 @@ test.describe('错误路径', () => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
-    await page.getByRole('button', { name: '退出登录' }).click();
+    await page.getByRole('button', { name: '账户菜单' }).click();
+    await page.getByRole('menuitem', { name: '退出登录' }).click();
     await expect(page.getByText('欢迎回来')).toBeVisible();
 
     const me = (await (await page.request.get('/api/auth/me')).json()) as { authenticated: boolean };
@@ -58,6 +60,6 @@ test.describe('错误路径', () => {
       buffer: Buffer.from('this is not a valid bill'),
     });
 
-    await expect(page.getByText('导入失败，请检查文件格式')).toBeVisible();
+    await expect(page.getByText('预览失败，请检查文件格式')).toBeVisible();
   });
 });

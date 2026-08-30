@@ -38,6 +38,13 @@ describe('validation', () => {
     expect(() => requireNonNegativeAmount(undefined)).toThrow(HttpError);
   });
 
+  it('requireNonNegativeAmount 只接受最多两位小数', () => {
+    expect(requireNonNegativeAmount(12.34)).toBe(12.34);
+    expect(requireNonNegativeAmount('12.30')).toBe(12.3);
+    expect(() => requireNonNegativeAmount(12.345)).toThrow('最多保留两位小数');
+    expect(() => requireNonNegativeAmount('1e2')).toThrow('最多保留两位小数');
+  });
+
   it('requireDate 接受 YYYY-MM-DD，拒绝其他格式', () => {
     expect(requireDate('2026-08-12')).toBe('2026-08-12');
     expect(() => requireDate('2026-8-1')).toThrow(HttpError);

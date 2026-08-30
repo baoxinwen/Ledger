@@ -1,4 +1,5 @@
-import { test, expect, Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 const E2E_SETUP_TOKEN = 'e2e-setup-token';
 

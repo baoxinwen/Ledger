@@ -1,4 +1,5 @@
-import { test, expect, Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 const E2E_SETUP_TOKEN = 'e2e-setup-token';
 
@@ -26,10 +27,9 @@ test('M-2 验证：切换收支类型后已选分类被重置，避免类型错�
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
 
-  // 填金额 + 选一个支出分类（默认支出类型）；MUI Select 选项渲染在 body 的 portal 中。
+  // 填金额 + 选一个支出分类（默认支出类型）；分类为图标网格瓦片（role=option）。
   await dialog.getByRole('spinbutton', { name: '金额' }).fill('100');
-  await dialog.getByRole('combobox', { name: '分类' }).click();
-  await page.getByRole('option', { name: /餐饮/ }).click();
+  await dialog.getByRole('option', { name: /餐饮/ }).click();
 
   const submit = dialog.getByRole('button', { name: '添加' });
   await expect(submit).toBeEnabled();

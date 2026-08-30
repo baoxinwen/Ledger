@@ -50,4 +50,17 @@ describe('TagService', () => {
     expect(map.get(t1.id)?.map((t) => t.name)).toEqual(['午餐']);
     expect(map.get(t2.id)?.map((t) => t.name).sort()).toEqual(['午餐', '通勤']);
   });
+
+  it('getAll 返回每个标签的 usage_count（含 0 次）', () => {
+    const lunch = tagService.create('午餐');
+    const unused = tagService.create('闲置');
+    transactionService.create({ type: 'expense', amount: 10, category_id: expenseId, date: '2026-01-01', tag_ids: [lunch.id] });
+    transactionService.create({ type: 'expense', amount: 20, category_id: expenseId, date: '2026-01-02', tag_ids: [lunch.id] });
+
+    const tags = tagService.getAll();
+    const lunchRow = tags.find((t) => t.id === lunch.id);
+    const unusedRow = tags.find((t) => t.id === unused.id);
+    expect(lunchRow?.usage_count).toBe(2);
+    expect(unusedRow?.usage_count).toBe(0);
+  });
 });

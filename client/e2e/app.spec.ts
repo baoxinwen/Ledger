@@ -1,4 +1,5 @@
-import { test, expect, Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 const E2E_SETUP_TOKEN = 'e2e-setup-token';
 const E2E_USERNAME = 'admin';
@@ -90,9 +91,9 @@ test.describe('个人记账本应用', () => {
       await expect(page.getByRole('button', { name: '记一笔' })).toBeVisible();
     });
 
-    test('点击记一笔应该跳转到收支记录页面并打开新增弹窗', async ({ page }) => {
+    test('点击记一笔应该原地打开全局快速记账弹窗', async ({ page }) => {
       await page.getByRole('button', { name: '记一笔' }).click();
-      await expect(page).toHaveURL('/transactions');
+      await expect(page).toHaveURL('/');
       await expect(page.getByRole('dialog')).toBeVisible();
       await expect(page.getByRole('spinbutton', { name: '金额' })).toBeVisible();
     });
@@ -109,29 +110,28 @@ test.describe('个人记账本应用', () => {
       await expect(page.getByText('Ledger').first()).toBeVisible();
     });
 
-    test('应该能够导航到收支记录页面', async ({ page }) => {
-      await page.getByRole('tab', { name: /记账/ }).click();
+    test('应该能够通过侧边栏导航到收支记录页面', async ({ page }) => {
+      await page.locator('aside').getByRole('button', { name: '记账' }).click();
       await expect(page).toHaveURL('/transactions');
     });
 
-    test('应该能够导航到统计分析页面', async ({ page }) => {
-      await page.getByRole('tab', { name: /统计/ }).click();
+    test('应该能够通过侧边栏导航到统计分析页面', async ({ page }) => {
+      await page.locator('aside').getByRole('button', { name: '统计' }).click();
       await expect(page).toHaveURL('/statistics');
     });
 
-    test('应该能够导航到预算管理页面', async ({ page }) => {
-      await page.getByRole('tab', { name: /预算/ }).click();
+    test('应该能够通过侧边栏导航到预算管理页面', async ({ page }) => {
+      await page.locator('aside').getByRole('button', { name: '预算' }).click();
       await expect(page).toHaveURL('/budgets');
     });
 
-    test('应该能够导航到设置页面', async ({ page }) => {
-      await page.getByRole('tab', { name: /设置/ }).click();
+    test('应该能够通过侧边栏导航到设置页面', async ({ page }) => {
+      await page.locator('aside').getByRole('button', { name: '设置' }).click();
       await expect(page).toHaveURL('/settings');
     });
 
     test('应该能够切换深色模式', async ({ page }) => {
-      const themeButton = page.locator('header').locator('button').last();
-      await themeButton.click();
+      await page.getByRole('button', { name: '切换主题' }).click();
     });
   });
 
@@ -149,8 +149,29 @@ test.describe('个人记账本应用', () => {
       await expect(page.getByRole('button', { name: '新增记录' })).toBeVisible();
     });
 
-    test('应该显示筛选区域', async ({ page }) => {
-      await expect(page.getByText('筛选条件')).toBeVisible();
+    test('应该显示筛选入口与搜索框', async ({ page }) => {
+      await expect(page.getByRole('button', { name: /筛选/ })).toBeVisible();
+      await expect(page.getByPlaceholder('搜索备注...')).toBeVisible();
+    });
+
+    test('移动端筛选收纳进面板并可展开', async ({ page }) => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.reload();
+      await page.waitForLoadState('networkidle');
+
+      await expect(page.getByPlaceholder('搜索备注...')).toBeVisible();
+      await page.getByRole('button', { name: /筛选/ }).click();
+      // Popover 面板出现，包含分类/标签/日期/金额筛选
+      await expect(page.getByText('日期范围')).toBeVisible();
+      await expect(page.getByText('金额范围')).toBeVisible();
+    });
+
+    test('筛选结果汇总条完整显示收入、支出、结余三段金额', async ({ page }) => {
+      // 必须匹配到"收入 ¥x · 支出 ¥y · 结余 ¥z"整体结构：
+      // 此前用 getByText(/收入/) 被工具条常驻的"收入"筛选 Chip 短路，金额算错也测不出。
+      await expect(
+        page.getByText(/收入 ¥[\d,.]+\s*·\s*支出 ¥[\d,.]+\s*·\s*结余 ¥[\d,.]+/)
+      ).toBeVisible();
     });
 
     test('应该能够打开新增记录对话框', async ({ page }) => {
@@ -161,27 +182,28 @@ test.describe('个人记账本应用', () => {
 
     test('应该能够新增一笔支出', async ({ page }) => {
       await page.getByRole('button', { name: '新增记录' }).click();
-      
-      await page.getByRole('spinbutton', { name: '金额' }).fill('100');
-      await page.getByRole('combobox', { name: '分类' }).click();
-      await page.getByRole('option', { name: /餐饮/ }).click();
-      await page.getByRole('textbox', { name: '备注' }).fill('测试支出');
-      await page.getByRole('button', { name: '添加' }).click();
-      
+      const dialog = page.getByRole('dialog');
+
+      await dialog.getByRole('spinbutton', { name: '金额' }).fill('100');
+      // 分类为图标网格：瓦片带 role=option
+      await dialog.getByRole('option', { name: /餐饮/ }).click();
+      await dialog.getByRole('textbox', { name: '备注' }).fill('测试支出');
+      await dialog.getByRole('button', { name: '添加' }).click();
+
       await expect(page.getByRole('dialog')).not.toBeVisible();
       await expect(page.getByRole('cell', { name: '测试支出' }).first()).toBeVisible();
     });
 
     test('应该能够新增一笔收入', async ({ page }) => {
       await page.getByRole('button', { name: '新增记录' }).click();
-      
-      await page.getByRole('button', { name: '收入' }).click();
-      await page.getByRole('spinbutton', { name: '金额' }).fill('5000');
-      await page.getByRole('combobox', { name: '分类' }).click();
-      await page.getByRole('option', { name: /工资/ }).click();
-      await page.getByRole('textbox', { name: '备注' }).fill('测试收入');
-      await page.getByRole('button', { name: '添加' }).click();
-      
+      const dialog = page.getByRole('dialog');
+
+      await dialog.getByRole('button', { name: '收入' }).click();
+      await dialog.getByRole('spinbutton', { name: '金额' }).fill('5000');
+      await dialog.getByRole('option', { name: /工资/ }).click();
+      await dialog.getByRole('textbox', { name: '备注' }).fill('测试收入');
+      await dialog.getByRole('button', { name: '添加' }).click();
+
       await expect(page.getByRole('dialog')).not.toBeVisible();
       await expect(page.getByRole('cell', { name: '测试收入' }).first()).toBeVisible();
     });
@@ -205,6 +227,7 @@ test.describe('个人记账本应用', () => {
                 updated_at: '2026-06-23T00:00:00.000Z',
               }],
               total: 1,
+              summary: { income: 0, expense: 12.34, count: 1 },
             }),
           });
           return;
@@ -216,7 +239,9 @@ test.describe('个人记账本应用', () => {
       await page.waitForLoadState('networkidle');
 
       await expect(page.getByRole('cell', { name: '待删除测试记录', exact: true })).toBeVisible();
-      await page.getByRole('button', { name: '删除待删除测试记录' }).first().click();
+      const targetRow = page.getByRole('row').filter({ hasText: '待删除测试记录' });
+      await targetRow.hover();
+      await targetRow.getByRole('button', { name: '删除待删除测试记录' }).click();
       await expect(page.getByRole('dialog')).toBeVisible();
       await expect(page.getByText('删除这条记录？')).toBeVisible();
 
@@ -243,14 +268,20 @@ test.describe('个人记账本应用', () => {
     });
 
     test('应该显示收支概览', async ({ page }) => {
-      await expect(page.getByText('总收入', { exact: true })).toBeVisible();
-      await expect(page.getByText('总支出', { exact: true })).toBeVisible();
-      await expect(page.getByText('结余', { exact: true })).toBeVisible();
+      // 环形图中心默认也显示"总支出"，这里用 .first() 兼容概览标签与图中心两处
+      await expect(page.getByText('总收入', { exact: true }).first()).toBeVisible();
+      await expect(page.getByText('总支出', { exact: true }).first()).toBeVisible();
+      await expect(page.getByText('结余', { exact: true }).first()).toBeVisible();
     });
 
-    test('应该显示图表', async ({ page }) => {
-      await expect(page.getByText('分类金额占比')).toBeVisible();
-      await expect(page.getByText('每日收支趋势')).toBeVisible();
+    test('有交易时显示图表，无交易时显示紧凑空态', async ({ page }) => {
+      const emptyState = page.getByText('所选时间范围内没有交易记录', { exact: true });
+      if (await emptyState.isVisible()) {
+        await expect(page.getByText('每日收支趋势')).not.toBeVisible();
+      } else {
+        await expect(page.getByText('分类金额占比')).toBeVisible();
+        await expect(page.getByText('每日收支趋势')).toBeVisible();
+      }
     });
   });
 
@@ -333,8 +364,8 @@ test.describe('个人记账本应用', () => {
 
     test('应该能够切换到数据导入导出', async ({ page }) => {
       await page.getByRole('tab', { name: '数据导入导出' }).click();
-      await expect(page.getByText('导出数据')).toBeVisible();
-      await expect(page.getByText('导入数据')).toBeVisible();
+      await expect(page.getByText('导出交易数据')).toBeVisible();
+      await expect(page.getByText('导入账单')).toBeVisible();
     });
   });
 });
@@ -345,6 +376,7 @@ test.describe('统计图表交互优化', () => {
       name: `分类${index + 1}`,
       icon: '📦',
       color: '#2ECC71',
+      type: 'expense',
       total: 1000 - index * 70,
     }));
 
@@ -355,9 +387,23 @@ test.describe('统计图表交互优化', () => {
           totalIncome: 5000,
           totalExpense: 4200,
           balance: 800,
+          transactionCount: 12,
+          days: 2,
+          dailyAverages: { income: 2500, expense: 2100 },
+          previousPeriod: {
+            startDate: '2026-05-30',
+            endDate: '2026-05-31',
+            totalIncome: 0,
+            totalExpense: 0,
+            balance: 0,
+            transactionCount: 0,
+            days: 2,
+          },
+          changes: { income: null, expense: null, transactionCount: null, balance: 800 },
+          tagStats: { income: [], expense: [] },
           categoryStats: [
             ...categoryStats,
-            { name: '零元分类', icon: '📦', color: '#BDC3C7', total: 0 },
+            { name: '零元分类', icon: '📦', color: '#BDC3C7', type: 'expense', total: 0 },
           ],
           dailyStats: [
             { date: '2026-06-01', type: 'income', total: 5000 },
@@ -419,7 +465,10 @@ test.describe('设置页布局优化', () => {
     await page.route('**/api/tags**', async (route) => {
       await route.fulfill({
         contentType: 'application/json',
-        body: JSON.stringify([{ id: 1, name: '支付宝' }, { id: 2, name: '微信' }]),
+        body: JSON.stringify([
+          { id: 1, name: '支付宝', usage_count: 0 },
+          { id: 2, name: '微信', usage_count: 0 },
+        ]),
       });
     });
     await ensureAuthenticated(page);
@@ -441,5 +490,36 @@ test.describe('设置页布局优化', () => {
     const importCardBox = await page.getByTestId('import-card').boundingBox();
     expect(Math.round(exportCardBox?.y || 0)).toBe(Math.round(importCardBox?.y || 0));
     expect(Math.round(exportCardBox?.height || 0)).toBe(Math.round(importCardBox?.height || 0));
+
+    const exportJsonBox = await page.getByRole('button', { name: '导出 JSON' }).boundingBox();
+    const exportCsvBox = await page.getByRole('button', { name: '导出 CSV' }).boundingBox();
+    expect(exportJsonBox?.height).toBeLessThanOrEqual(40);
+    expect(exportCsvBox?.height).toBeLessThanOrEqual(40);
+  });
+
+  test('移动端备份操作不挤压说明且页面无水平溢出', async ({ page }) => {
+    await page.route('**/api/backups', async (route) => {
+      await route.fulfill({ contentType: 'application/json', body: '[]' });
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole('tab', { name: '备份与恢复' }).click();
+
+    const subtitle = page.getByText(/自动快照每天在业务时区 03:00 创建/);
+    const subtitleBox = await subtitle.boundingBox();
+    expect(subtitleBox?.width).toBeGreaterThan(200);
+    await expect(page.getByRole('button', { name: '上传恢复' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '创建备份' })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  });
+
+  test('移动端设置标签提供明确的横向滚动按钮', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.reload();
+    await page.waitForLoadState('networkidle');
+
+    const scrollButtons = page.locator('.MuiTabs-scrollButtons');
+    await expect(scrollButtons).toHaveCount(2);
+    await expect(scrollButtons.last()).toBeVisible();
+    await expect(scrollButtons.last()).toBeEnabled();
   });
 });
