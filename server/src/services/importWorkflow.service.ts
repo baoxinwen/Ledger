@@ -4,6 +4,7 @@ import { ImportDiagnostic, ImportableTransaction, TransactionWithDetails } from 
 import { fromCents, toCents } from '../utils/amount';
 import { decodeUploadedFilename } from '../utils/multipart';
 import { HttpError } from '../utils/errors';
+import { logger } from '../utils/logger';
 import { categoryService } from './category.service';
 import {
   FileImportSource,
@@ -430,23 +431,33 @@ export class ImportWorkflowService {
         contentDuplicates: prepared.counts.contentDuplicates,
       };
     } catch (error) {
-      db.prepare(`
-        INSERT INTO import_batches (
-          filename, source, status, total_count, ready_count, success_count,
-          skipped_count, duplicate_count, failed_count, excluded_count,
-          income_cents, expense_cents, diagnostics_json
-        ) VALUES (?, ?, 'failed', ?, ?, 0, ?, ?, ?, ?, 0, 0, ?)
-      `).run(
-        filename,
-        prepared.source,
-        prepared.counts.total,
-        selectableCount,
-        prepared.counts.skipped,
-        prepared.counts.hardDuplicates + prepared.counts.contentDuplicates,
-        prepared.counts.failed + candidates.length,
-        excludedCount,
-        JSON.stringify([...diagnostics, { level: 'error', outcome: 'failed', reason: getErrorMessage(error) }].slice(0, 100))
-      );
+      // 补偿性失败批次记录自身也可能因同一故障（SQLITE_FULL/锁）失败：
+      // 必须吞掉它的异常，保证原始错误优先传播，否则真实失败原因既不响应也不落日志。
+      try {
+        db.prepare(`
+          INSERT INTO import_batches (
+            filename, source, status, total_count, ready_count, success_count,
+            skipped_count, duplicate_count, failed_count, excluded_count,
+            income_cents, expense_cents, diagnostics_json
+          ) VALUES (?, ?, 'failed', ?, ?, 0, ?, ?, ?, ?, 0, 0, ?)
+        `).run(
+          filename,
+          prepared.source,
+          prepared.counts.total,
+          selectableCount,
+          prepared.counts.skipped,
+          prepared.counts.hardDuplicates + prepared.counts.contentDuplicates,
+          prepared.counts.failed + candidates.length,
+          excludedCount,
+          JSON.stringify([...diagnostics, { level: 'error', outcome: 'failed', reason: getErrorMessage(error) }].slice(0, 100))
+        );
+      } catch (logError) {
+        logger.error('记录失败导入批次时出错（原始错误将优先抛出）', {
+          scope: 'import',
+          originalError: getErrorMessage(error),
+          logError: getErrorMessage(logError),
+        });
+      }
       throw error;
     }
   }

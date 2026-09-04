@@ -16,6 +16,8 @@ import { logger } from '../utils/logger';
 
 export const BACKUP_FORMAT_VERSION = 1;
 export const DEFAULT_BACKUP_DIR = path.join(__dirname, '..', '..', 'backups');
+// pre_restore 快照保留上限：超出后从最旧开始清理（见 cleanupPreRestoreBackups）。
+const MAX_PRE_RESTORE_BACKUPS = 10;
 
 export type BackupType = 'manual' | 'automatic' | 'pre_restore';
 
@@ -250,6 +252,7 @@ export class BackupService {
   async restoreFromFile(sourcePath: string): Promise<void> {
     this.validateBackup(sourcePath);
     await this.createSnapshot('pre_restore');
+    this.cleanupPreRestoreBackups();
 
     const suffix = crypto.randomBytes(6).toString('hex');
     const stagedPath = `${this.dependencies.databasePath}.restore-staged-${suffix}`;
@@ -335,6 +338,17 @@ export class BackupService {
     const keep = selectAutomaticBackupsToKeep(automatic, now, timeZone);
     for (const backup of automatic) {
       if (!keep.has(backup.id)) removeIfExists(backup.path);
+    }
+  }
+
+  // pre_restore 快照保留策略：每次恢复前都会生成一份账本全量快照，反复试恢复
+  // 不同备份包会按账本大小无限累积占满磁盘，只保留最近 MAX_PRE_RESTORE_BACKUPS 份。
+  private cleanupPreRestoreBackups(): void {
+    const preRestore = this.listBackups({ deep: false })
+      .filter((item) => item.type === 'pre_restore')
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    for (const backup of preRestore.slice(MAX_PRE_RESTORE_BACKUPS)) {
+      removeIfExists(backup.path);
     }
   }
 

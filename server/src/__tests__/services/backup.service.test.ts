@@ -157,6 +157,36 @@ describe('BackupService', () => {
     expect(currentDb.prepare("SELECT value FROM app_settings WHERE key = 'marker'").pluck().get()).toBe('keep-after-rename-error');
     expect(maintenance).toBe(false);
   });
+
+  it('pre_restore 快照按保留上限清理，反复恢复不无限累积', async () => {
+    let tick = 0;
+    let db = currentDb;
+    // 每次恢复推进一分钟，保证 pre_restore 快照文件名/createdAt 唯一。
+    const service = new BackupService({
+      databasePath,
+      backupDir,
+      getDatabase: () => db,
+      closeDatabase: () => db.close(),
+      reopenDatabase: () => {
+        if (db.open) db.close();
+        db = openDatabase(databasePath);
+        currentDb = db;
+        return db;
+      },
+      initializeDatabase: () => migrateDatabase(db),
+      setMaintenance: (value) => { maintenance = value; },
+      getTimeZone: () => 'Asia/Shanghai',
+      now: () => new Date(Date.parse('2026-08-18T05:00:00.000Z') + tick++ * 60_000),
+    });
+
+    const source = await service.createSnapshot('manual');
+    for (let i = 0; i < 12; i++) {
+      await service.restoreFromFile(source.path);
+    }
+
+    const remaining = service.listBackups({ deep: false }).filter((item) => item.type === 'pre_restore');
+    expect(remaining).toHaveLength(10);
+  });
 });
 
 describe('automatic backup scheduling and retention', () => {

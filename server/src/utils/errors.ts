@@ -24,3 +24,13 @@ export function getErrorMessage(error: unknown): string {
 export function isForeignKeyError(error: unknown): boolean {
   return /FOREIGN KEY constraint failed/i.test(getErrorMessage(error));
 }
+
+// 系统级错误识别：better-sqlite3 抛 SqliteError，文件系统错误带 errno code。
+// 各路由共用：系统级错误应统一按 500 + 通用文案响应（不泄露内部信息），
+// 而不是压成 400 并透传错误原文。
+export function isInternalSystemError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const name = (error as { name?: unknown }).name;
+  const code = (error as { code?: unknown }).code;
+  return name === 'SqliteError' || (typeof code === 'string' && code.length > 0);
+}

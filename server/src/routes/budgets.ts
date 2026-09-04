@@ -53,7 +53,9 @@ router.post('/', (req: Request, res: Response) => {
 
 router.put('/:id', (req: Request, res: Response) => {
   const id = requirePositiveId(req.params.id);
-  const category_id = optionalPositiveId(req.body.category_id, '分类');
+  // 显式 null 表示"改回总预算"：不能被 optionalPositiveId 折叠成 undefined（否则更新被静默跳过，
+  // 前端提示成功但预算仍挂在原分类下）。
+  const category_id = req.body.category_id === null ? null : optionalPositiveId(req.body.category_id, '分类');
   const amount = optionalNonNegativeAmount(req.body.amount, '预算金额');
   if (amount !== undefined && amount <= 0) {
     throw new HttpError(400, '预算金额必须大于 0');

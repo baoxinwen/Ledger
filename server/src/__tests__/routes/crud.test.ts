@@ -8,6 +8,7 @@ import request from 'supertest';
 import db from '../setup';
 import app from '../../app';
 import { authService } from '../../services/auth.service';
+import { settingsService } from '../../services/settings.service';
 
 async function setupAgent(): Promise<ReturnType<typeof request.agent>> {
   process.env.SETUP_TOKEN = 'crud-token';
@@ -25,9 +26,9 @@ describe('CRUD API routes', () => {
     db.exec('DELETE FROM users');
     db.exec('DELETE FROM transaction_tags');
     db.exec('DELETE FROM transactions');
+    db.exec('DELETE FROM budgets');
     db.exec('DELETE FROM tags');
     db.exec('DELETE FROM categories');
-    db.exec('DELETE FROM budgets');
     db.exec("DELETE FROM app_settings WHERE key IN ('setup_token_hash','time_zone','theme_mode')");
   });
 
@@ -90,6 +91,38 @@ describe('CRUD API routes', () => {
     expect((await agent.delete(`/api/budgets/${created.body.id}`)).status).toBe(204);
   });
 
+  it('budgets: PUT category_id=null 可改回总预算（此前被静默忽略）', async () => {
+    const agent = await setupAgent();
+    const cat = await agent.post('/api/categories').send({ name: '餐饮', type: 'expense' });
+
+    const created = await agent.post('/api/budgets').send({ category_id: cat.body.id, amount: 500, period: 'monthly', start_date: '2026-08-01' });
+    expect(created.body.category_id).toBe(cat.body.id);
+
+    // 前端编辑预算改回"总预算"时显式提交 null：必须真实清空分类，而不是被 optionalPositiveId 折叠成"未提供"跳过更新。
+    const updated = await agent.put(`/api/budgets/${created.body.id}`).send({ category_id: null });
+    expect(updated.status).toBe(200);
+    expect(updated.body.category_id).toBeNull();
+
+    const reFetched = await agent.get(`/api/budgets/${created.body.id}`);
+    expect(reFetched.body.category_id).toBeNull();
+  });
+
+  it('budgets: 收入分类不能作为预算分类（此前静默创建 spent 恒为 0 的无效预算）', async () => {
+    const agent = await setupAgent();
+    const incomeCat = await agent.post('/api/categories').send({ name: '工资', type: 'income' });
+
+    const created = await agent.post('/api/budgets').send({ category_id: incomeCat.body.id, amount: 500, period: 'monthly', start_date: '2026-08-01' });
+    expect(created.status).toBe(400);
+
+    // 更新路径同样拦截：支出预算不能被改挂到收入分类上。
+    const expenseCat = await agent.post('/api/categories').send({ name: '餐饮', type: 'expense' });
+    const budget = await agent.post('/api/budgets').send({ category_id: expenseCat.body.id, amount: 500, period: 'monthly', start_date: '2026-08-01' });
+    const updated = await agent.put(`/api/budgets/${budget.body.id}`).send({ category_id: incomeCat.body.id });
+    expect(updated.status).toBe(400);
+    // 原预算不应被部分修改
+    expect((await agent.get(`/api/budgets/${budget.body.id}`)).body.category_id).toBe(expenseCat.body.id);
+  });
+
   it('settings: 读取默认、更新主题、拒绝非法时区', async () => {
     const agent = await setupAgent();
 
@@ -100,6 +133,21 @@ describe('CRUD API routes', () => {
     expect(updated.body.theme_mode).toBe('dark');
 
     expect((await agent.put('/api/settings').send({ time_zone: 'UTC+8' })).status).toBe(400);
+  });
+
+  it('settings: 系统级错误按 500 + 通用文案响应，不透传内部错误原文', async () => {
+    const agent = await setupAgent();
+    const spy = jest.spyOn(settingsService, 'updateSettings').mockImplementationOnce(() => {
+      const sqliteError = new Error('SQLITE_FULL: database or disk is full');
+      sqliteError.name = 'SqliteError';
+      throw sqliteError;
+    });
+
+    const response = await agent.put('/api/settings').send({ theme_mode: 'dark' });
+    expect(response.status).toBe(500);
+    expect(response.body.error).toBe('服务器内部错误');
+    expect(response.body.error).not.toContain('SQLITE_FULL');
+    spy.mockRestore();
   });
 
   it('transactions: 创建并分页/筛选查询', async () => {

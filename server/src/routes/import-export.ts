@@ -7,7 +7,7 @@ import { logger } from '../utils/logger';
 import { buildLedgerCsv } from '../utils/csv';
 import { parseMultipartToMemory } from '../utils/multipart';
 import { optionalPositiveId, requirePositiveId } from '../utils/validation';
-import { HttpError } from '../utils/errors';
+import { HttpError, isInternalSystemError } from '../utils/errors';
 import { AuthenticatedRequest } from '../middleware/auth';
 import { ImportOutcome, ImportSelectionUpdate, ImportTransactionType } from '../services/importWorkflow.service';
 
@@ -198,12 +198,6 @@ function sendImportError(res: Response, error: unknown): void {
     return;
   }
   res.status(400).json({ error: getErrorMessage(error) });
-}
-
-// 系统级错误识别：better-sqlite3 抛 SqliteError，文件系统错误带 errno code。
-function isInternalSystemError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  return error.name === 'SqliteError' || typeof (error as NodeJS.ErrnoException).code === 'string';
 }
 
 function logImportEvent(message: string, details: Record<string, unknown>, level: 'info' | 'error' = 'info'): void {

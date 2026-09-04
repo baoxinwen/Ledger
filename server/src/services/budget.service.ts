@@ -2,6 +2,7 @@
 import db from '../database';
 import { Budget } from '../types';
 import { fromCents, toCents } from '../utils/amount';
+import { HttpError } from '../utils/errors';
 
 export class BudgetService {
   getAll(): Budget[] {
@@ -12,7 +13,18 @@ export class BudgetService {
     return db.prepare('SELECT *, amount_cents / 100.0 AS amount FROM budgets WHERE id = ?').get(id) as Budget | undefined;
   }
 
-  create(data: { category_id?: number; amount: number; period: 'monthly' | 'yearly'; start_date: string }): Budget {
+  // 预算执行金额只统计支出（见 getBudgetStatus），收入分类预算的 spent 恒为 0，
+  // 静默创建只会产生永远无效的数据行，因此在服务层统一拦截。
+  private assertExpenseCategory(categoryId: number | null | undefined): void {
+    if (categoryId === null || categoryId === undefined) return;
+    const row = db.prepare('SELECT type FROM categories WHERE id = ?').get(categoryId) as { type: string } | undefined;
+    if (!row || row.type !== 'expense') {
+      throw new HttpError(400, '预算分类必须存在且为支出分类');
+    }
+  }
+
+  create(data: { category_id?: number | null; amount: number; period: 'monthly' | 'yearly'; start_date: string }): Budget {
+    this.assertExpenseCategory(data.category_id);
     const result = db.prepare(
       'INSERT INTO budgets (category_id, amount_cents, period, start_date) VALUES (?, ?, ?, ?)'
     ).run(data.category_id || null, toCents(data.amount), data.period, data.start_date);
@@ -20,10 +32,12 @@ export class BudgetService {
     return this.getById(result.lastInsertRowid as number)!;
   }
 
-  update(id: number, data: { category_id?: number; amount?: number; period?: 'monthly' | 'yearly'; start_date?: string }): Budget | null {
+  update(id: number, data: { category_id?: number | null; amount?: number; period?: 'monthly' | 'yearly'; start_date?: string }): Budget | null {
     const existing = this.getById(id);
     if (!existing) return null;
 
+    this.assertExpenseCategory(data.category_id);
+    // category_id 为显式 null 表示"改回总预算"，必须真实清空而不是跳过更新。
     if (data.category_id !== undefined) {
       db.prepare('UPDATE budgets SET category_id = ? WHERE id = ?').run(data.category_id, id);
     }
