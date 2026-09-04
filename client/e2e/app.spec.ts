@@ -77,9 +77,14 @@ test.describe('个人记账本应用', () => {
     });
 
     test('首页指标卡不再使用旧高饱和渐变', async ({ page }) => {
-      const backgroundImages = await page.locator('[data-testid^="home-"][data-testid$="-card"]').evaluateAll((cards) =>
+      // 先等卡片真实挂载：此前在网络空闲即取样，骨架屏阶段取到空数组使断言恒真通过。
+      const homeCards = page.locator('[data-testid^="home-"][data-testid$="-card"]');
+      await expect(homeCards.first()).toBeAttached();
+      const backgroundImages = await homeCards.evaluateAll((cards) =>
         cards.map((card) => window.getComputedStyle(card as HTMLElement).backgroundImage)
       );
+      // 数量护栏：[].every() 恒真——testid 被重命名后此断言会静默假通过，必须先确认选中了元素。
+      expect(backgroundImages.length).toBeGreaterThan(0);
       expect(backgroundImages.every((backgroundImage) => backgroundImage === 'none')).toBeTruthy();
     });
 
@@ -300,9 +305,14 @@ test.describe('个人记账本应用', () => {
     });
 
     test('预算总览卡不再使用旧高饱和渐变', async ({ page }) => {
-      const backgroundImages = await page.locator('[data-testid^="budget-"][data-testid$="-card"]').evaluateAll((cards) =>
+      // 先等卡片真实挂载：此前在网络空闲即取样，骨架屏阶段取到空数组使断言恒真通过。
+      const budgetCards = page.locator('[data-testid^="budget-"][data-testid$="-card"]');
+      await expect(budgetCards.first()).toBeAttached();
+      const backgroundImages = await budgetCards.evaluateAll((cards) =>
         cards.map((card) => window.getComputedStyle(card as HTMLElement).backgroundImage)
       );
+      // 数量护栏：[].every() 恒真——testid 被重命名后此断言会静默假通过，必须先确认选中了元素。
+      expect(backgroundImages.length).toBeGreaterThan(0);
       expect(backgroundImages.every((backgroundImage) => backgroundImage === 'none')).toBeTruthy();
     });
 
@@ -425,10 +435,13 @@ test.describe('统计图表交互优化', () => {
     const colors = await page.locator('[data-testid^="pie-legend-swatch-"]').evaluateAll((nodes) =>
       nodes.map((node) => window.getComputedStyle(node as HTMLElement).backgroundColor)
     );
+    // 数量护栏：[].every() / 空集合的 Set 去重都恒真，testid 变更时不得静默假通过。
+    expect(colors.length).toBeGreaterThan(0);
     expect(new Set(colors).size).toBe(colors.length);
     const hexColors = await page.locator('[data-testid^="pie-legend-swatch-"]').evaluateAll((nodes) =>
       nodes.map((node) => (node as HTMLElement).dataset.color)
     );
+    expect(hexColors.length).toBeGreaterThan(0);
     expect(hexColors.every((color) => color && EDITORIAL_CATEGORY_COLORS.includes(color))).toBeTruthy();
 
     await page.getByTestId('pie-legend-item-分类3').hover();
