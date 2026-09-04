@@ -218,3 +218,7 @@ docker compose pull
 docker compose up -d
 docker compose logs -f app
 ```
+
+## 许可证
+
+本项目基于 [MIT](LICENSE) 许可证开源。
