@@ -6,6 +6,7 @@ import { categoryService } from './category.service';
 import { tagService } from './tag.service';
 import { transactionService } from './transaction.service';
 import { getErrorMessage } from '../utils/errors';
+import { isCalendarDate } from '../utils/validation';
 
 // 单个 XLSX ZIP 条目的最大解压体积，防止单条目 zip bomb。
 const MAX_XLSX_ENTRY_BYTES = 50 * 1024 * 1024;
@@ -516,6 +517,10 @@ export function validateImportTransaction(transaction: ImportableTransaction): s
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(transaction.date)) {
     errors.push('日期格式无效，应为 YYYY-MM-DD');
+  } else if (!isCalendarDate(transaction.date)) {
+    // 与手动创建接口（requireDate）对齐：拒绝 2026-02-30 这类日历上不存在的日期，
+    // 否则记录会永久落入统计/预算的字符串区间盲区，收支被静默算少。
+    errors.push('日期无效，请检查年月日');
   }
   if ((transaction.note ?? '').length > 2000) {
     // 与手动创建接口（optionalString 默认 2000）对齐。

@@ -55,18 +55,24 @@ export function optionalNonNegativeAmount(value: unknown, name = '金额'): numb
   return requireNonNegativeAmount(value, name);
 }
 
+// 回读校验年月日，判断 YYYY-MM-DD 是否为日历上真实存在的日期（拒绝 2026-02-30、2026-13-01）。
+// 手动创建（requireDate）与账单导入（billImport）共用，避免导入路径绕过校验后
+// 记录落入统计/预算的字符串区间盲区。
+export function isCalendarDate(value: string): boolean {
+  const [year, month, day] = value.split('-').map(Number);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return (
+    parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 &&
+    parsed.getUTCDate() === day
+  );
+}
+
 export function requireDate(value: unknown): string {
   if (typeof value !== 'string' || !DATE_PATTERN.test(value)) {
     throw new HttpError(400, '日期格式无效，应为 YYYY-MM-DD');
   }
-  const [year, month, day] = value.split('-').map(Number);
-  const parsed = new Date(Date.UTC(year, month - 1, day));
-  // 回读校验年月日，拒绝 2026-02-30、2026-13-01 这类不存在的日期。
-  if (
-    parsed.getUTCFullYear() !== year ||
-    parsed.getUTCMonth() !== month - 1 ||
-    parsed.getUTCDate() !== day
-  ) {
+  if (!isCalendarDate(value)) {
     throw new HttpError(400, '日期无效，请检查年月日');
   }
   return value;

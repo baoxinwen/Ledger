@@ -273,6 +273,20 @@ describe('BillImportService', () => {
     expect(result.errors[1]).toContain('分类名称长度不能超过 64 个字符');
   });
 
+  it('标准导入拒绝日历上不存在的日期而不是静默入库', () => {
+    // "2026-02-30" 能通过 YYYY-MM-DD 格式校验，但入库后会永久落入统计/预算的
+    // 字符串区间盲区（既不在 2 月也不在 3 月区间），收支被静默算少。
+    const transactions = parseStandardJson(JSON.stringify([
+      { type: 'expense', amount: 12.5, category: '餐饮', date: '2026-02-30' },
+      { type: 'expense', amount: 12.5, category: '餐饮', date: '2026-13-01' },
+    ]));
+    const result = billImportService.importTransactions(transactions);
+    expect(result.failed).toBe(2);
+    expect(result.success).toBe(0);
+    expect(result.errors[0]).toContain('日期无效，请检查年月日');
+    expect(result.errors[1]).toContain('日期无效，请检查年月日');
+  });
+
   it('标准 CSV 表头带前缀（如“交易日期”“交易类型”）时仍能正确解析', () => {
     const csv = [
       '交易日期,交易类型,交易分类,金额(元),备注',
