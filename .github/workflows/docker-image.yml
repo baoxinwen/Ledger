@@ -18,6 +18,8 @@ jobs:
   test:
     name: Run tests
     runs-on: ubuntu-latest
+    # 显式超时：默认 360 分钟上限内挂起的 job 会持续占用 runner。
+    timeout-minutes: 20
     # 测试任务只需要读代码权限，不授予任何写权限（最小权限原则）。
     permissions:
       contents: read
@@ -48,6 +50,7 @@ jobs:
   e2e:
     name: Run e2e tests
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
 
@@ -86,6 +89,7 @@ jobs:
   build:
     name: Build and publish
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: [test, e2e]
     permissions:
       contents: read
