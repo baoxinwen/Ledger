@@ -148,12 +148,18 @@ export default function TransactionsPage() {
   const handleConfirmDelete = async () => {
     if (!deleteTarget) return;
 
+
     try {
       setDeleting(true);
       const deletedDetail = transactionId === deleteTarget.id;
       await transactionApi.delete(deleteTarget.id);
       showSnackbar('记录删除成功', 'success');
       setDeleteTarget(null);
+      // 删掉当前页最后一条且不在第一页时回退一页，否则重拉会对超界 offset 返回空列表，
+      // 页面停在"暂无记录"的越界空页上，而前面页仍有数据。
+      if (transactions.length === 1 && (filter.page ?? 1) > 1) {
+        setFilter({ ...filter, page: (filter.page ?? 1) - 1 });
+      }
       notifyDataChanged();
       if (deletedDetail) handleCloseDetail();
     } catch (err) {

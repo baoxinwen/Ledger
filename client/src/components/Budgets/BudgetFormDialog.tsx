@@ -20,7 +20,7 @@ interface BudgetFormDialogProps {
   onClose: () => void;
   /** 提交成功 resolve(true)，失败 resolve(false)——失败时弹窗保持打开 */
   onSubmit: (data: {
-    category_id?: number;
+    category_id?: number | null;
     amount: number;
     period: 'monthly' | 'yearly';
     start_date: string;
@@ -73,7 +73,9 @@ export default function BudgetFormDialog({
     setSubmitting(true);
     try {
       const success = await onSubmit({
-        category_id: categoryId || undefined,
+        // 编辑时选回"总预算"必须显式提交 null：转成 undefined 会被 JSON 序列化丢弃，
+        // 服务端按字段存在性跳过 category_id 更新，提示成功但预算仍挂在原分类下。
+        category_id: categoryId === '' && budget ? null : categoryId || undefined,
         amount: parsedAmount,
         period,
         start_date: startDate,

@@ -79,16 +79,20 @@ export default function ImportExportManager({ onImportComplete }: ImportExportMa
   // 预览行请求代际：快速切换筛选时丢弃过期响应，防止表格与筛选标签不一致。
   const previewRowsRequestId = useRef(0);
 
+  // 历史分页请求代际：快速连点分页时丢弃后到的过期响应，防止列表与分页器停在旧页。
+  const historyRequestId = useRef(0);
   const loadHistory = useCallback(async (page = 1) => {
+    const requestId = ++historyRequestId.current;
     try {
       setHistoryLoading(true);
       const response = await importExportApi.getHistory(page, 20);
+      if (requestId !== historyRequestId.current) return; // 已有更新的分页请求，丢弃过期响应
       setHistory(response.data);
     } catch (error) {
       console.error('Failed to load import history:', error);
-      showSnackbar('加载导入历史失败', 'error');
+      if (requestId === historyRequestId.current) showSnackbar('加载导入历史失败', 'error');
     } finally {
-      setHistoryLoading(false);
+      if (requestId === historyRequestId.current) setHistoryLoading(false);
     }
   }, [showSnackbar]);
 

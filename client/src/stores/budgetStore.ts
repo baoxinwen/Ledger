@@ -68,6 +68,11 @@ async function refetchBudgetData(get: () => BudgetState): Promise<void> {
   });
 }
 
+// 请求代际计数：与 transactionStore 相同的模式，旧响应后到直接丢弃，
+// 防止预算列表/月度状态被慢请求的过期结果覆盖。
+let budgetsRequestId = 0;
+let statusRequestId = 0;
+
 export const useBudgetStore = create<BudgetState>((set, get) => ({
   budgets: [],
   status: [],
@@ -76,22 +81,26 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
   statusLoading: false,
 
   fetchBudgets: async () => {
+    const requestId = ++budgetsRequestId;
     set({ loading: true });
     try {
       const response = await budgetApi.getAll();
+      if (requestId !== budgetsRequestId) return; // 已有更新的请求，丢弃过期响应
       set({ budgets: response.data });
     } finally {
-      set({ loading: false });
+      if (requestId === budgetsRequestId) set({ loading: false });
     }
   },
 
   fetchStatus: async (month: string) => {
+    const requestId = ++statusRequestId;
     set({ statusLoading: true });
     try {
       const response = await budgetApi.getStatus(month);
+      if (requestId !== statusRequestId) return;
       set({ status: response.data, statusMonth: month });
     } finally {
-      set({ statusLoading: false });
+      if (requestId === statusRequestId) set({ statusLoading: false });
     }
   },
 

@@ -85,8 +85,11 @@ export default function TransactionForm({
     }
     // 注意：today 不进依赖数组——跨午夜时由下方独立 effect 仅滚动日期，
     // 否则 useZonedToday 的分钟级 tick 会把用户正在填写的金额/备注整体清空。
+    // 依赖只保留 [transaction, open]：默认值重置只应发生在弹窗打开/目标记录切换时。
+    // 若依赖表单记忆的 category_id/type，"保存并再记"写入记忆会触发重跑，
+    // 把用户已选的日期静默重置回今天（记错天）。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transaction, transactionForm.category_id, transactionForm.type]);
+  }, [transaction, open]);
 
   // 跨天（含弹窗打开期间跨零点）时仅把新建模式的日期滚动到新的"今天"，其余字段不动。
   // 用户手动改过日期（选了昨天/任意日期）则不覆盖，尊重用户输入。
@@ -115,7 +118,9 @@ export default function TransactionForm({
     const liveTagIds = selectedTags
       .filter((selectedTag) => tags.some((tag) => tag.id === selectedTag.id))
       .map((t) => t.id);
-    return { type, amount: parsedAmount, category_id: categoryId, note: note || undefined, date, tag_ids: liveTagIds };
+    // 空备注必须显式提交空串：服务端按 note 字段是否存在决定是否更新，
+    // 转成 undefined 会被 JSON 序列化丢弃，"清空备注"被静默跳过。
+    return { type, amount: parsedAmount, category_id: categoryId, note: note, date, tag_ids: liveTagIds };
   };
 
   const handleSubmit = async (keepOpen = false) => {
@@ -155,7 +160,12 @@ export default function TransactionForm({
         if (!name) continue;
         const existing = tags.find((tag) => tag.name === name);
         const tag = existing || await onCreateTag(name);
-        if (tag) nextTags.push(tag);
+        // 创建失败必须可见地反馈：静默丢弃会让用户以为已带上标签，实际保存的记录没有该标签。
+        if (!tag) {
+          showSnackbar(`标签「${name}」创建失败，请稍后重试`, 'error');
+          continue;
+        }
+        nextTags.push(tag);
       } else {
         nextTags.push(item);
       }

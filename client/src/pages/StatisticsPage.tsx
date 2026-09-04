@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Box,
+  Button,
   Typography,
   ToggleButton,
   ToggleButtonGroup,
@@ -42,6 +43,8 @@ export default function StatisticsPage() {
   const [monthlySeries, setMonthlySeries] = useState<MonthlySeriesItem[] | null>(null);
   // 区分"首次进入还没拉到数据"与"拉取失败"：前者显示加载中，后者才显示失败
   const [statsFailed, setStatsFailed] = useState(false);
+  // 失败态重试入口：自增触发下方统计 effect 重新发起当前范围的请求。
+  const [retryToken, setRetryToken] = useState(0);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const timeZone = useSettingsStore((state) => state.settings.time_zone);
@@ -81,7 +84,7 @@ export default function StatisticsPage() {
       showSnackbar('加载统计数据失败', 'error');
     });
     // dataVersion 变化（全局记一笔/编辑/删除）时重拉，保证图表实时
-  }, [range, invalidCustomRange, dataVersion, fetchStats, showSnackbar]);
+  }, [range, invalidCustomRange, dataVersion, retryToken, fetchStats, showSnackbar]);
 
   // 近 6 个月序列：直接调 API 聚合，不占用 store 的单槽 stats。
   useEffect(() => {
@@ -190,6 +193,11 @@ export default function StatisticsPage() {
               <Typography variant="body1" sx={{ color: statsLoading || !statsFailed ? 'text.secondary' : 'error.main' }}>
                 {statsLoading || !statsFailed ? '加载中...' : '加载失败，请重试'}
               </Typography>
+              {!statsLoading && statsFailed && (
+                <Button sx={{ mt: 2 }} variant="outlined" onClick={() => setRetryToken((token) => token + 1)}>
+                  重试
+                </Button>
+              )}
             </Box>
         </SectionCard>
       )}

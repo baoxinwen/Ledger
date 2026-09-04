@@ -93,7 +93,7 @@ export const budgetApi = {
     api.get<Budget[]>('/budgets'),
   getStatus: (month: string) =>
     api.get<BudgetStatus[]>('/budgets/status', { params: { month } }),
-  create: (data: { category_id?: number; amount: number; period: 'monthly' | 'yearly'; start_date: string }) =>
+  create: (data: { category_id?: number | null; amount: number; period: 'monthly' | 'yearly'; start_date: string }) =>
     api.post<Budget>('/budgets', data),
   update: (id: number, data: Partial<Budget>) =>
     api.put<Budget>(`/budgets/${id}`, data),

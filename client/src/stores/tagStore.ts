@@ -29,7 +29,12 @@ export const useTagStore = create<TagState>((set) => ({
   createTag: async (name: string) => {
     try {
       const response = await tagApi.create(name);
-      set((state) => ({ tags: [...state.tags, response.data] }));
+      set((state) => (
+        // 服务端是 get-or-create 语义：同名请求返回既有标签，按 id 去重避免列表出现重复 chip。
+        state.tags.some((tag) => tag.id === response.data.id)
+          ? state
+          : { tags: [...state.tags, response.data] }
+      ));
       return response.data;
     } catch (error) {
       console.error('Failed to create tag:', error);

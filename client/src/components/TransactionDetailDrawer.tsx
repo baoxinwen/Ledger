@@ -18,6 +18,8 @@ import { Close as CloseIcon, DeleteOutline as DeleteIcon, Edit as EditIcon } fro
 import { transactionApi } from '../api';
 import type { TransactionDetail, TransactionWithDetails } from '../types';
 import { formatRelativeDay } from '../utils/format';
+import { useSettingsStore } from '../stores/settingsStore';
+import { useZonedToday } from '../hooks/useZonedToday';
 import { Amount, CategoryAvatar, TagChip, TypeBadge } from './ui';
 
 interface TransactionDetailDrawerProps {
@@ -37,6 +39,9 @@ export default function TransactionDetailDrawer({
 }: TransactionDetailDrawerProps) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const timeZone = useSettingsStore((state) => state.settings.time_zone);
+  // 传业务时区的"今天"：与列表的相对日期口径一致（否则今天记的账在列表显示"今天"、在抽屉显示具体日期）。
+  const today = useZonedToday(timeZone);
   const [transaction, setTransaction] = useState<TransactionDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -111,7 +116,7 @@ export default function TransactionDetailDrawer({
               </Box>
 
               <DetailSection title="账本信息">
-                <DetailRow label="日期" value={transaction.date} hint={formatRelativeDay(transaction.date)} />
+                <DetailRow label="日期" value={transaction.date} hint={formatRelativeDay(transaction.date, today)} />
                 <DetailRow label="备注" value={transaction.note || '-'} />
                 <Box>
                   <Typography variant="caption" color="text.secondary">标签</Typography>
