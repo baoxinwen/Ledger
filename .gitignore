@@ -20,3 +20,6 @@ screenshots/
 data/
 backups/
 server/backups/
+
+# 本地评审/文档目录不入库
+docs/
