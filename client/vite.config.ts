@@ -7,7 +7,7 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          const normalizedId = id.replaceAll('\\', '/');
+          const normalizedId = id.replace(/\\/g, '/');
           const reactRuntimePackages = [
             '/node_modules/react/',
             '/node_modules/react-dom/',

@@ -265,7 +265,8 @@ export class TransactionService {
         db.prepare('UPDATE transactions SET category_id = ? WHERE id = ?').run(data.category_id, id);
       }
       if (data.note !== undefined) {
-        db.prepare('UPDATE transactions SET note = ? WHERE id = ?').run(data.note, id);
+        // 空串归一为 null，与 create（data.note || null）保持同一存储口径：清空备注即回到"无备注"。
+        db.prepare('UPDATE transactions SET note = ? WHERE id = ?').run(data.note || null, id);
       }
       if (data.date) {
         db.prepare('UPDATE transactions SET date = ? WHERE id = ?').run(data.date, id);
